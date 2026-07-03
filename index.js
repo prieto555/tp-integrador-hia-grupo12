@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const sequelize = require("./config/database");
-
+const cocinaRoutes = require("./src/routes/cocina.route");
 var app = express();
 
 //middlewares
@@ -21,7 +21,7 @@ app.use('/api/roles', require('./src/routes/rol.route'));
 app.use('/api/funciones', require('./src/routes/funcion.route'));
 app.use('/api/auth', require('./src/routes/login.route'));
 app.use('/api/reportes', require('./src/routes/reporte.route'));
-
+app.use("/api/cocina", cocinaRoutes);
 //setting
 app.set('port', process.env.PORT || 3000);
 
