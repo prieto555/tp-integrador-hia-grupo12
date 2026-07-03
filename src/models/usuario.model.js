@@ -3,7 +3,7 @@ const sequelize = require('./../../config/database'); // Asegúrate de que la ru
 
 const Usuario = sequelize.define('Usuario', {
     // Sequelize crea un campo 'id' autoincrementable automáticamente, no hace falta ponerlo
-    usuarioId : { type: DataTypes.INTEGER, allowNull: false},
+    usuarioId : { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false},
     apellido: { type: DataTypes.STRING, allowNull: false },
     nombre: { type: DataTypes.STRING, allowNull: false },
     dni: { type: DataTypes.STRING, allowNull: false },
@@ -11,8 +11,14 @@ const Usuario = sequelize.define('Usuario', {
     password: { type: DataTypes.STRING, allowNull: false }
 }, {
     tableName: 'usuarios', // Nombre de la tabla en minúsculas y plural
-    timestamps: true, // Crea automáticamente los campos createdAt y updatedAt
 });
+
+const bcrypt = require('bcryptjs');
+
+// compararPassword: compara la password ingresada contra el hash guardado
+Usuario.prototype.compararPassword = async function (passwordPlano) {
+    return bcrypt.compare(passwordPlano, this.password);
+};
 
 module.exports = Usuario;
 

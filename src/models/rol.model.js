@@ -3,7 +3,7 @@ const sequelize = require('./../../config/database'); // Asegúrate de que la ru
 
 const Rol = sequelize.define('Rol', {
     // Sequelize crea un campo 'id' autoincrementable automáticamente, no hace falta ponerlo
-    rolId: { type: DataTypes.INTEGER, allowNull: false},
+    rolId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false},
     tipo: { type: DataTypes.STRING, allowNull: false },
     nombre: { type: DataTypes.STRING, allowNull: false },
 }, {

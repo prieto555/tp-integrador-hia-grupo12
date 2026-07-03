@@ -25,11 +25,15 @@ app.use('/api/reportes', require('./src/routes/reporte.route'));
 //setting
 app.set('port', process.env.PORT || 3000);
 
+const seedDatabase = require('./config/seed');
+
 // Sincronizar Base de Datos y arrancar el servidor
 //.sync() con alter: true actualiza las tablas si hubo cambios en los modelos
 sequelize.sync({ alter: true })
-  .then(() => {
+  .then(async () => {
     console.log("Tablas de PostgreSQL sincronizadas");
+    await seedDatabase();
+    
     app.listen(app.get("port"), () => {
       console.log(`Server started on port`, app.get("port"));
     });

@@ -3,7 +3,7 @@ const sequelize = require('./../../config/database'); // Asegúrate de que la ru
 
 const Funcion = sequelize.define('Funcion', {
     // Sequelize crea un campo 'id' autoincrementable automáticamente, no hace falta ponerlo
-    funcionId : { type: DataTypes.INTEGER, allowNull: false},
+    funcionId : { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true, allowNull: false},
     nombre: { type: DataTypes.STRING, allowNull: false },
     detalle: { type: DataTypes.STRING, allowNull: false },
 }, {
