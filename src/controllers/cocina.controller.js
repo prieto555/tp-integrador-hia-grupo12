@@ -30,7 +30,7 @@ const obtenerComandas = async (req, res) => {
   }
 };
 
-// 2. NUEVO: Cambiar el estado del pedido (PENDIENTE -> EN_COCINA -> LISTO_PARA_ENTREGA)
+// Cambiar el estado del pedido (PENDIENTE -> EN_COCINA -> LISTO_PARA_ENTREGA)
 const actualizarEstadoPedido = async (req, res) => {
   const { idPedido } = req.params;
   const { nuevoEstado } = req.body; // El frontend enviará "EN_COCINA" o "LISTO_PARA_ENTREGA"
@@ -62,5 +62,5 @@ const actualizarEstadoPedido = async (req, res) => {
 
 module.exports = {
   obtenerComandas,
-  actualizarEstadoPedido // ← Acordate de exportarlo
+  actualizarEstadoPedido 
 };
