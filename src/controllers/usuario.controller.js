@@ -14,7 +14,7 @@ usuarioCtrl.getUsuarios = async (req, res) => {
 // Crear un nuevo usuario
 usuarioCtrl.createUsuario = async (req, res) => {
     try {
-            const {email} = req.body
+            const {email, password} = req.body
 
             const existe = await Usuario.findOne({
             where: {
