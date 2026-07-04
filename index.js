@@ -18,12 +18,8 @@ const authLimiter = rateLimit({
   message: "Demasiados intentos de inicio de sesión, intente de nuevo en 15 minutos."
 });
 
-const auditoriaMiddleware = require("./src/middlewares/auditoria.middleware");
-
 app.use(express.json());
 app.use(cors({ origin: "http://localhost:4200" }));
-
-app.use(auditoriaMiddleware);
 
 //Cargamos el modulo de direccionamiento de rutas
 app.use('/api/pedidos', require('./src/routes/pedido.route'));
