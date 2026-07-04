@@ -187,4 +187,32 @@ const obtenerPagos = async (req, res) => {
   }
 };
 
-module.exports = { registrarPago, recibirWebhookMP, obtenerPagos };
+const updatePago = async (req, res) => {
+  try {
+    const id = req.params.id;
+    await Pago.update(req.body, {
+      where: { idPago: id }
+    });
+    res.json({ message: "Pago actualizado exitosamente" });
+  } catch (error) {
+    res.status(500).json({ message: "Error al actualizar pago", error: error.message });
+  }
+};
+
+const deletePago = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const deleted = await Pago.destroy({
+      where: { idPago: id }
+    });
+    if (deleted) {
+      res.json({ message: "Pago eliminado exitosamente" });
+    } else {
+      res.status(404).json({ message: "Pago no encontrado" });
+    }
+  } catch (error) {
+    res.status(500).json({ message: "Error al eliminar pago", error: error.message });
+  }
+};
+
+module.exports = { registrarPago, recibirWebhookMP, obtenerPagos, updatePago, deletePago };

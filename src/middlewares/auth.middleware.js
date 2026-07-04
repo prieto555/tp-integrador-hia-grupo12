@@ -10,7 +10,7 @@ const verificarToken = (req, res, next) => {
     const token = authHeader.split(" ")[1];
 
     try {
-        const payload = jwt.verify(token, process.env.JWT_SECRET || 'secreto_super_seguro_123');
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
         req.usuario = payload; // payload: { idUsuario, email, roles, permisos }
         next();
     } catch (error) {

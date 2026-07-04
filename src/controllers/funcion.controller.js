@@ -44,4 +44,21 @@ funcionCtrl.updateFuncion = async (req, res) => {
     }
 }
 
+funcionCtrl.deleteFuncion = async (req, res) => {
+    try {
+        const id = req.params.id;
+        const deleted = await Funcion.destroy({
+            where: { funcionId: id } // Using the PK
+        });
+        if (deleted) {
+            res.json({ status: '1', msg: 'Funcion eliminada' });
+        } else {
+            res.status(404).json({ status: '0', msg: 'Funcion no encontrada' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(400).json({ status: '0', msg: 'Error procesando la operacion' });
+    }
+};
+
 module.exports = funcionCtrl

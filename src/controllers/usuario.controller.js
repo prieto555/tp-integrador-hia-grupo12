@@ -4,9 +4,29 @@ const bcrypt = require("bcryptjs");
 
 const usuarioCtrl = {};
 
-// Obtener todos los usuarios con sus roles
+// Obtener todos los usuarios con sus roles (y paginacion opcional)
 usuarioCtrl.getUsuarios = async (req, res) => {
     try {
+        const { page, size } = req.query;
+
+        if (page !== undefined && size !== undefined) {
+            const limit = parseInt(size, 10);
+            const offset = parseInt(page, 10) * limit;
+
+            const { count, rows } = await Usuario.findAndCountAll({
+                include: [{ model: Rol }],
+                limit,
+                offset
+            });
+
+            return res.json({
+                totalItems: count,
+                data: rows,
+                totalPages: Math.ceil(count / limit),
+                currentPage: parseInt(page, 10)
+            });
+        }
+
         const usuarios = await Usuario.findAll({
             include: [{ model: Rol }]
         });

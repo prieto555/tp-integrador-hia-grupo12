@@ -52,4 +52,22 @@ rolCtrl.updateRol = async (req, res) => {
     }
 };
 
+// Eliminar un rol
+rolCtrl.deleteRol = async (req, res) => {
+    try {
+        const id = req.params.id;
+        const deleted = await Rol.destroy({
+            where: { rolId: id }
+        });
+        if (deleted) {
+            res.json({ status: '1', msg: 'Rol eliminado' });
+        } else {
+            res.status(404).json({ status: '0', msg: 'Rol no encontrado' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(400).json({ status: '0', msg: 'Error procesando la operacion' });
+    }
+};
+
 module.exports = rolCtrl;

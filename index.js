@@ -5,9 +5,25 @@ const sequelize = require("./config/database");
 const cocinaRoutes = require("./src/routes/cocina.route");
 var app = express();
 
+// middlewares de seguridad
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+
 //middlewares
+app.use(helmet()); // Protege cabeceras HTTP
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 10, // Limita cada IP a 10 peticiones de login por ventana
+  message: "Demasiados intentos de inicio de sesión, intente de nuevo en 15 minutos."
+});
+
+const auditoriaMiddleware = require("./src/middlewares/auditoria.middleware");
+
 app.use(express.json());
 app.use(cors({ origin: "http://localhost:4200" }));
+
+app.use(auditoriaMiddleware);
 
 //Cargamos el modulo de direccionamiento de rutas
 app.use('/api/pedidos', require('./src/routes/pedido.route'));
@@ -19,7 +35,7 @@ app.use('/api/caja', require('./src/routes/caja.route'));
 app.use('/api/usuarios', require('./src/routes/usuario.route'));
 app.use('/api/roles', require('./src/routes/rol.route'));
 app.use('/api/funciones', require('./src/routes/funcion.route'));
-app.use('/api/auth', require('./src/routes/login.route'));
+app.use('/api/auth', authLimiter, require('./src/routes/login.route'));
 app.use('/api/reportes', require('./src/routes/reporte.route'));
 app.use("/api/cocina", cocinaRoutes);
 //setting

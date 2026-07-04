@@ -28,11 +28,25 @@ const crearProducto = async (req, res) => {
   }
 };
 
-// obtenerProductos (opcionalmente filtra por ?categoria=plato_principal)
+// obtenerProductos (opcionalmente filtra por ?categoria=plato_principal) con paginacion
 const obtenerProductos = async (req, res) => {
   try {
-    const { categoria } = req.query;
+    const { categoria, page, size } = req.query;
     const where = categoria ? { categoria } : {};
+
+    // Si se envía page y size, se usa findAndCountAll. Si no, findAll simple para retrocompatibilidad
+    if (page !== undefined && size !== undefined) {
+      const limit = parseInt(size, 10);
+      const offset = parseInt(page, 10) * limit;
+      
+      const { count, rows } = await Producto.findAndCountAll({ where, limit, offset });
+      return res.json({
+        totalItems: count,
+        data: rows,
+        totalPages: Math.ceil(count / limit),
+        currentPage: parseInt(page, 10)
+      });
+    }
 
     const productos = await Producto.findAll({ where });
     res.json(productos);
