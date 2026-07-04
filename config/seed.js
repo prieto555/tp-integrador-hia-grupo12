@@ -51,7 +51,8 @@ const seedDatabase = async () => {
             cobrar_pedido: await Funcion.create({ nombre: 'cobrar_pedido', detalle: 'Cobrar pedidos y abrir caja' }),
             gestionar_usuarios: await Funcion.create({ nombre: 'gestionar_usuarios', detalle: 'Crear o modificar usuarios y roles' }),
             ver_items_cocina: await Funcion.create({ nombre: 'ver_items_cocina', detalle: 'Ver los items pendientes de cocinar' }),
-            cambiar_estado_item: await Funcion.create({ nombre: 'cambiar_estado_item', detalle: 'Marcar items como listos' })
+            cambiar_estado_item: await Funcion.create({ nombre: 'cambiar_estado_item', detalle: 'Marcar items como listos' }),
+            gestionar_menu: await Funcion.create({ nombre: 'gestionar_menu', detalle: 'Agregar, editar o eliminar productos del menú' })
         };
 
         // 2. Crear Roles

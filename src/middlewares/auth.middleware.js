@@ -37,4 +37,23 @@ const verificarPermiso = (...permisosRequeridos) => {
     };
 };
 
-module.exports = { verificarToken, verificarPermiso };
+// verificarRol: exige que el usuario tenga al menos uno de los roles dados
+const verificarRol = (...rolesRequeridos) => {
+    return (req, res, next) => {
+        if (!req.usuario) {
+            return res.status(401).json({ message: "No autenticado" });
+        }
+
+        const rolesDelUsuario = req.usuario.roles || [];
+        const tieneRol = rolesRequeridos.some((r) => rolesDelUsuario.includes(r));
+
+        if (!tieneRol) {
+            return res.status(403).json({
+                message: `Acceso denegado. Se requiere rol: ${rolesRequeridos.join(' o ')}`,
+            });
+        }
+        next();
+    };
+};
+
+module.exports = { verificarToken, verificarPermiso, verificarRol };
