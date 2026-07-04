@@ -1,18 +1,47 @@
 const Rol = require('../src/models/rol.model');
 const Funcion = require('../src/models/funcion.model');
 const Usuario = require('../src/models/usuario.model');
+const Producto = require('../src/models/producto.model');
+const Mesa = require('../src/models/mesa.model');
 const bcrypt = require('bcryptjs');
 
 const seedDatabase = async () => {
     try {
+        console.log("Seed: Inicializando datos base...");
+
+        // 0. Crear Productos por defecto si no hay
+        const countProductos = await Producto.count();
+        if (countProductos === 0) {
+            await Producto.bulkCreate([
+                { nombre: 'Hamburguesa Clasica', descripcion: 'Doble carne, cheddar, bacon y papas', precio: 8500, categoria: 'plato_principal', imagenUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&q=80' },
+                { nombre: 'Pizza Margarita', descripcion: 'Salsa de tomate, mozzarella y albahaca fresca', precio: 12000, categoria: 'plato_principal', imagenUrl: 'https://images.unsplash.com/photo-1604068549290-dea0e4a305ca?w=500&q=80' },
+                { nombre: 'Coca Cola 1.5L', descripcion: 'Gaseosa linea Coca Cola', precio: 3000, categoria: 'bebida', imagenUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=500&q=80' },
+                { nombre: 'Volcan de Chocolate', descripcion: 'Con centro liquido y bocha de helado de crema', precio: 4500, categoria: 'postre', imagenUrl: 'https://images.unsplash.com/photo-1624353365286-3f8d62daad51?w=500&q=80' }
+            ]);
+            console.log(`Seed: Productos por defecto insertados!`);
+        }
+
+        // 0.5 Crear Mesas por defecto si no hay
+        const countMesas = await Mesa.count();
+        if (countMesas === 0) {
+            await Mesa.bulkCreate([
+                { numMesa: 1, capacidad: 2, estado: 'LIBRE' },
+                { numMesa: 2, capacidad: 2, estado: 'LIBRE' },
+                { numMesa: 3, capacidad: 4, estado: 'LIBRE' },
+                { numMesa: 4, capacidad: 4, estado: 'LIBRE' },
+                { numMesa: 5, capacidad: 4, estado: 'LIBRE' },
+                { numMesa: 6, capacidad: 6, estado: 'LIBRE' },
+                { numMesa: 7, capacidad: 6, estado: 'LIBRE' }
+            ]);
+            console.log(`Seed: 7 Mesas por defecto insertadas!`);
+        }
+
         // Verificar si ya existen roles
         const countRoles = await Rol.count();
         if (countRoles > 0) {
-            console.log("Seed: La base de datos ya tiene roles. Omitiendo seed.");
+            console.log("Seed: La base de datos ya tiene roles. Omitiendo seed de usuarios.");
             return;
         }
-
-        console.log("Seed: Inicializando datos base...");
 
         // 1. Crear Funciones (Permisos)
         const funciones = {
@@ -59,7 +88,7 @@ const seedDatabase = async () => {
         // 5. Asignar rol de Gerente al admin
         await admin.addRol(gerente);
 
-        console.log(`Seed: ¡Base de datos poblada exitosamente con el usuario ${adminEmail}!`);
+        console.log(`Seed: ¡Base de datos poblada exitosamente con el usuario ${adminEmail} y productos por defecto!`);
 
     } catch (error) {
         console.error("Seed Error: No se pudo poblar la base de datos.", error);

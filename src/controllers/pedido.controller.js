@@ -1,23 +1,59 @@
 const Pedido = require("../models/pedido.model");
 const Mesa = require("../models/mesa.model");
 
-// crearPedido
+// crearPedido (ahora soporta Detalles y tipoPedido)
 const crearPedido = async (req, res) => {
-  const { idMesa } = req.body;
-  
-  if (!idMesa) {
+  const { idMesa, tipoPedido, detalles, telefonoCliente } = req.body;
+  // tipoPedido por defecto es LOCAL si no viene
+  const tipo = tipoPedido || 'LOCAL';
+
+  if (tipo === 'LOCAL' && !idMesa) {
     return res.status(400).json({ message: "El idMesa es obligatorio para crear un pedido LOCAL." });
   }
 
-  try {
-    // Forzamos el tipoPedido a LOCAL
-    const nuevoPedido = await Pedido.create({ tipoPedido: 'LOCAL', idMesa });
+  if (!detalles || detalles.length === 0) {
+    return res.status(400).json({ message: "El pedido debe contener al menos un producto (detalles)." });
+  }
 
-    // Siempre pasamos la mesa a OCUPADA
-    await Mesa.update({ estado: 'OCUPADA' }, { where: { idMesa: idMesa } });
+  try {
+    // 1. Crear el Pedido (con total 0 inicialmente)
+    const nuevoPedido = await Pedido.create({ 
+      tipoPedido: tipo, 
+      idMesa: tipo === 'LOCAL' ? idMesa : null, 
+      total: 0
+    });
+
+    // 2. Si es LOCAL, pasar la mesa a OCUPADA
+    if (tipo === 'LOCAL') {
+      await Mesa.update({ estado: 'OCUPADA' }, { where: { idMesa: idMesa } });
+    }
+
+    // 3. Crear los Detalles y sumar el Total
+    let totalGeneral = 0;
+    const detallesPromises = detalles.map(async (item) => {
+      // subTotal = precioUnitario * cantidad
+      const subTotal = item.precioUnitario * item.cantidad;
+      totalGeneral += subTotal;
+      
+      return require('../models/detallePedido.model').create({
+        idPedido: nuevoPedido.idPedido,
+        idProducto: item.idProducto,
+        cantidad: item.cantidad,
+        precioUnitario: item.precioUnitario,
+        subTotal: subTotal
+      });
+    });
+
+    await Promise.all(detallesPromises);
+
+    // 4. Actualizar el Total del Pedido
+    await nuevoPedido.update({ total: totalGeneral });
 
     const pedidoCreado = await Pedido.findByPk(nuevoPedido.idPedido, {
-      include: [{ model: Mesa, as: "mesa" }]
+      include: [
+        { model: Mesa, as: "mesa" },
+        { model: require('../models/detallePedido.model'), as: "detalles", include: ["producto"] }
+      ]
     });
 
     res.status(201).json({ message: "Pedido creado correctamente", pedido: pedidoCreado });
@@ -49,6 +85,38 @@ const obtenerPedidoPorId = async (req, res) => {
     res.json(pedido);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener el pedido", error: error.message });
+  }
+};
+
+// obtenerPedidosCocina (solo pedidos PENDIENTES o EN_COCINA con items que requieran preparacion)
+const obtenerPedidosCocina = async (req, res) => {
+  try {
+    const pedidos = await Pedido.findAll({
+      where: {
+        estado: ['PENDIENTE', 'EN_COCINA']
+      },
+      include: [
+        { model: Mesa, as: "mesa" },
+        { 
+          model: require('../models/detallePedido.model'), 
+          as: "detalles", 
+          include: [{
+            model: require('../models/producto.model'),
+            as: "producto",
+            where: {
+              categoria: ['entrada', 'plato_principal', 'postre'] // Filtramos bebidas
+            }
+          }]
+        }
+      ],
+      order: [['fechaCreacion', 'ASC']]
+    });
+
+    // Sequelize inner join (where on include) might filter out orders completely if they only have drinks.
+    // That is EXACTLY what we want: if an order is just 2 Coca-Colas, the kitchen shouldn't see it!
+    res.json(pedidos);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener pedidos de cocina", error: error.message });
   }
 };
 
@@ -98,4 +166,4 @@ const cancelar = async (req, res) => {
   }
 };
 
-module.exports = { obtenerPedidos, obtenerPedidoPorId, crearPedido, cambiarEstado, cancelar };
+module.exports = { obtenerPedidos, obtenerPedidosCocina, obtenerPedidoPorId, crearPedido, cambiarEstado, cancelar };

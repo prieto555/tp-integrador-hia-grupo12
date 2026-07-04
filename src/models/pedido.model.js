@@ -13,7 +13,7 @@ const Pedido = sequelize.define("Pedido", {
     defaultValue: "PENDIENTE",
   },
   tipoPedido: {
-    type: DataTypes.ENUM("LOCAL"),
+    type: DataTypes.ENUM("LOCAL", "DELIVERY"),
     defaultValue: "LOCAL",
     allowNull: false,
   },
