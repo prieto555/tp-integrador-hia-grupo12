@@ -98,7 +98,7 @@ loginCtrl.googleLogin = async (req, res) => {
             // Buscamos el rol de cliente
             let rolCliente = await Rol.findOne({ where: { nombre: 'Cliente' } });
             if (!rolCliente) {
-                rolCliente = await Rol.create({ nombre: 'Cliente' });
+                rolCliente = await Rol.create({ tipo: 'CLIENTE', nombre: 'Cliente' });
             }
             
             const randomPassword = Math.random().toString(36).slice(-8);
