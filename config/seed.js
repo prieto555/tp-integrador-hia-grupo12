@@ -89,7 +89,28 @@ const seedDatabase = async () => {
         // 5. Asignar rol de Gerente al admin
         await admin.addRol(gerente);
 
-        console.log(`Seed: ¡Base de datos poblada exitosamente con el usuario ${adminEmail} y productos por defecto!`);
+        // 6. Crear Usuarios de prueba para la defensa (Staff)
+        const staffHash = await bcrypt.hash('123456', 10);
+        
+        const mozoUser = await Usuario.create({
+            nombre: 'Juan', apellido: 'Mozo', dni: '11111111',
+            email: 'mozo@restaurante.com', password: staffHash
+        });
+        await mozoUser.addRol(mozo);
+
+        const cocinaUser = await Usuario.create({
+            nombre: 'Chef', apellido: 'Perez', dni: '22222222',
+            email: 'cocina@restaurante.com', password: staffHash
+        });
+        await cocinaUser.addRol(cocina);
+
+        const cajeroUser = await Usuario.create({
+            nombre: 'Ana', apellido: 'Cajera', dni: '33333333',
+            email: 'cajero@restaurante.com', password: staffHash
+        });
+        await cajeroUser.addRol(cajero);
+
+        console.log(`Seed: ¡Base de datos poblada exitosamente con el admin y el Staff de prueba!`);
 
     } catch (error) {
         console.error("Seed Error: No se pudo poblar la base de datos.", error);
