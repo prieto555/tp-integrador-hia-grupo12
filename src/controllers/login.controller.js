@@ -1,6 +1,7 @@
 const Usuario = require('./../models/usuario.model');
 const Rol = require('./../models/rol.model');
 const Funcion = require('./../models/funcion.model');
+const Historial = require('./../models/historial.model');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -58,6 +59,18 @@ loginCtrl.login = async (req, res) => {
 
         // Generar Token normal
         const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "8h" });
+        
+        // Registrar en el Historial de Accesos
+        try {
+            await Historial.create({
+                usuarioId: usuario.usuarioId || usuario.id,
+                metodo: 'EMAIL',
+                ip: req.ip || req.connection.remoteAddress
+            });
+        } catch (e) {
+            console.error("Error al guardar historial de acceso:", e.message);
+        }
+
         res.json({ message: "Login exitoso", token, usuario: payload });
 
     } catch (error) {
@@ -142,6 +155,18 @@ loginCtrl.googleLogin = async (req, res) => {
         };
 
         const jwtToken = jwt.sign(appPayload, process.env.JWT_SECRET, { expiresIn: "8h" });
+        
+        // Registrar en el Historial de Accesos
+        try {
+            await Historial.create({
+                usuarioId: usuario.usuarioId || usuario.id,
+                metodo: 'GOOGLE',
+                ip: req.ip || req.connection.remoteAddress
+            });
+        } catch (e) {
+            console.error("Error al guardar historial de acceso:", e.message);
+        }
+
         res.json({ message: "Google Login exitoso", token: jwtToken, usuario: appPayload });
 
     } catch (error) {
