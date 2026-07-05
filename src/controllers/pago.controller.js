@@ -82,7 +82,12 @@ const registrarPago = async (req, res) => {
     res.status(201).json({ message: "Pago registrado correctamente", pago: nuevoPago });
 
   } catch (error) {
-    await t.rollback();
+    try {
+      await t.rollback();
+    } catch (rollbackError) {
+      // Ignore "already finished" error
+    }
+    console.error("Error real en registrarPago:", error);
     res.status(500).json({ message: "Error al registrar pago", error: error.message });
   }
 };
