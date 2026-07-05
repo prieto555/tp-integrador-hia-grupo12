@@ -34,22 +34,30 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 //Cargamos el modulo de direccionamiento de rutas
-app.use('/api/pedidos', require('./src/routes/pedido.route'));
-app.use('/api/productos', require('./src/routes/producto.route'));
-app.use('/api/detalles-pedidos', require('./src/routes/detallePedido.route'));
-app.use('/api/mesas', require('./src/routes/mesa.route'));
-app.use('/api/pagos', require('./src/routes/pago.route'));
+const authRoutes = require('./src/routes/login.route');
+const usuariosRoutes = require('./src/routes/usuario.route');
+const mesaRoutes = require('./src/routes/mesa.route');
+const productoRoutes = require('./src/routes/producto.route');
+const pedidoRoutes = require('./src/routes/pedido.route');
+const pagoRoutes = require('./src/routes/pago.route');
+const historialRoutes = require('./src/routes/historial.route');
+
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/mesas', mesaRoutes);
+app.use('/api/productos', productoRoutes);
+app.use('/api/pedidos', pedidoRoutes);
+app.use('/api/cocina', cocinaRoutes);
+app.use('/api/pagos', pagoRoutes);
+app.use('/api/historial', historialRoutes);
 app.use('/api/caja', require('./src/routes/caja.route'));
-app.use('/api/usuarios', require('./src/routes/usuario.route'));
 app.use('/api/roles', require('./src/routes/rol.route'));
 app.use('/api/funciones', require('./src/routes/funcion.route'));
-app.use('/api/auth', authLimiter, require('./src/routes/login.route'));
 app.use('/api/reportes', require('./src/routes/reporte.route'));
 // Swagger Setup
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger.config');
 
-app.use("/api/cocina", cocinaRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 //setting
 app.set('port', process.env.PORT || 3000);
