@@ -34,6 +34,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 //Cargamos el modulo de direccionamiento de rutas
+app.use('/api/chatbot', require('./src/routes/chatbot.route'));
 const authRoutes = require('./src/routes/login.route');
 const usuariosRoutes = require('./src/routes/usuario.route');
 const mesaRoutes = require('./src/routes/mesa.route');
