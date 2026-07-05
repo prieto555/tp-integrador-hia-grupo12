@@ -1,37 +1,75 @@
-# Backend - Sistema de Gestión de Pedidos y Delivery
+# ⚙️ RestoYa - Backend (Node.js & Express)
 
-Este es el backend del sistema de restaurante y delivery desarrollado con **Node.js, Express y PostgreSQL (Sequelize)**. Implementa el patrón arquitectónico MVC, protecciones de seguridad, validaciones de servidor y consumo de APIs de terceros (MercadoPago y Google Auth).
+Este es el **Backend** del sistema de restaurante y delivery "RestoYa", desarrollado con **Node.js, Express y PostgreSQL (Sequelize)**. Implementa el patrón arquitectónico MVC, altas protecciones de seguridad, validaciones de servidor, y consumo e integración nativa de **APIs de terceros**.
 
-## 🚀 Requisitos de Instalación
+---
 
-1. Clonar el repositorio.
-2. Ejecutar `npm install` para instalar las dependencias.
-3. Crear una base de datos PostgreSQL local (o en la nube).
-4. Configurar el archivo `.env` en la raíz del proyecto basándose en `.env.example`.
-5. Ejecutar `npm run dev` para iniciar en modo desarrollo o `npm start` para producción.
+## 🎯 Objetivos del Proyecto
+Cumplir con todos los requisitos técnicos de **Programación y Servicios Web (UNJu)**, desarrollando una API RESTful robusta, documentada y segura, capaz de manejar roles, transacciones comerciales y reportería.
 
-### Variables de Entorno (`.env`)
-```env
-PORT=3000
-DB_HOST=localhost
-DB_USER=postgres
-DB_PASSWORD=tu_password
-DB_NAME=proybackendgrupo13final
-DB_DIALECT=postgres
-JWT_SECRET=tu_secreto_muy_seguro
-ADMIN_EMAIL=admin@admin.com
-ADMIN_PASSWORD=admin
-FRONTEND_URL=http://localhost:4200
+## 🛠️ Tecnología Aplicada
+- **Servidor:** Node.js v18+ con Express.js.
+- **Base de Datos:** PostgreSQL en la nube.
+- **ORM:** Sequelize (Sincronización automática de modelos).
+- **Seguridad:** JWT, Bcryptjs, Helmet, Express-Rate-Limit.
+- **Documentación:** Swagger (OpenAPI).
+- **Reportes:** PDFKit, ExcelJS.
+
+---
+
+## 🏗️ Arquitectura (MVC)
+
+El proyecto está estrictamente dividido en capas para garantizar la escalabilidad:
+
+```mermaid
+graph LR
+    A[Rutas Express] --> B[Middlewares Validaciones/Auth]
+    B --> C[Controladores]
+    C --> D[Modelos Sequelize]
+    D --> E[(PostgreSQL)]
 ```
 
 ---
 
-## 🛡️ Seguridad Implementada
-- **Helmet:** Protección contra vulnerabilidades de cabeceras HTTP.
-- **Express-Rate-Limit:** Prevención de ataques de fuerza bruta en el endpoint de Login.
-- **Express-Validator:** Validaciones estrictas del lado del servidor.
-- **CORS:** Configurado para aceptar peticiones seguras del frontend.
-- **JWT (JSON Web Tokens):** Autenticación sin estado para proteger endpoints privados.
+## 📂 Estructura de Carpetas
+
+```text
+/
+ ├── config/             # Configuración de BD, Swagger y Semillas (Seeders)
+ ├── src/
+ │   ├── controllers/    # Lógica de negocio (Login, Pedidos, Productos, Caja)
+ │   ├── middlewares/    # Interceptores (Auth con JWT, Validaciones Express-Validator)
+ │   ├── models/         # Definición de Tablas y Relaciones (Sequelize)
+ │   └── routes/         # Definición de Endpoints HTTP (GET/POST/PUT/DELETE)
+ ├── index.js            # Punto de entrada de la aplicación
+ └── package.json        # Dependencias NPM
+```
+
+---
+
+## 🔌 APIs Externas Integradas (Backend)
+
+1. **MercadoPago SDK (`mercadopago`):** 
+   - **Integración:** El controlador `pago.controller.js` se comunica con MP para generar Preferencias de Pago. 
+   - **Webhooks:** Contamos con un endpoint específico (`POST /api/pagos/webhook`) que recibe las notificaciones de pago asíncronas de MP, registra el ingreso en la Caja, y actualiza el estado del pedido automáticamente usando Transacciones SQL.
+2. **Google Auth Library (`google-auth-library`):** 
+   - **Integración:** El controlador `login.controller.js` verifica criptográficamente los tokens enviados por el frontend contra los servidores de Google usando nuestro `GOOGLE_CLIENT_ID`. Si es válido, extrae nombre, apellido y correo para crear/loguear al usuario en nuestra BD.
+3. **Email API (`nodemailer`):** 
+   - **Integración:** Servicio para notificaciones vía correo electrónico a los usuarios.
+4. **Chatbot API:** 
+   - **Integración:** Respuestas automatizadas para atención al cliente.
+
+---
+
+## 🛡️ Mecanismos de Seguridad Implementados
+
+Para garantizar la máxima protección de los datos, se implementó:
+- **Helmet:** Oculta cabeceras de Express y configura políticas de seguridad HTTP.
+- **Express-Rate-Limit:** Previene ataques de fuerza bruta limitando los intentos de Login por IP a 10 cada 15 minutos.
+- **Express-Validator:** Validación estricta del lado del servidor. Se previenen Inyecciones SQL y envíos de datos corruptos antes de que toquen el Controlador.
+- **Bcrypt:** Hasheo de contraseñas de los usuarios. Ninguna clave se guarda en texto plano.
+- **JWT (JSON Web Tokens):** Las rutas privadas exigen un token válido firmado con un secreto asimétrico.
+- **Auditoría e Historial:** Se creó el modelo `Historial` que registra automáticamente cada inicio de sesión exitoso, almacenando el ID de usuario, la IP, el método (Email/Google) y la fecha/hora exacta.
 
 ---
 
