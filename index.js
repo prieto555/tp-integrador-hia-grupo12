@@ -19,7 +19,19 @@ const authLimiter = rateLimit({
 });
 
 app.use(express.json());
-app.use(cors({ origin: "http://localhost:4200" }));
+// Configuración de CORS dinámica
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como Postman) o desde el frontend (localhost o Vercel/Render)
+    const permitidos = ['http://localhost:4200', process.env.FRONTEND_URL];
+    if (!origin || permitidos.includes(origin) || origin.includes('onrender.com')) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  }
+};
+app.use(cors(corsOptions));
 
 //Cargamos el modulo de direccionamiento de rutas
 app.use('/api/pedidos', require('./src/routes/pedido.route'));
@@ -33,7 +45,12 @@ app.use('/api/roles', require('./src/routes/rol.route'));
 app.use('/api/funciones', require('./src/routes/funcion.route'));
 app.use('/api/auth', authLimiter, require('./src/routes/login.route'));
 app.use('/api/reportes', require('./src/routes/reporte.route'));
+// Swagger Setup
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger.config');
+
 app.use("/api/cocina", cocinaRoutes);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 //setting
 app.set('port', process.env.PORT || 3000);
 

@@ -10,6 +10,16 @@ const {
 const { verificarToken, verificarRol } = require("../middlewares/auth.middleware");
 
 // GETs son públicos (para que los clientes vean el menú)
+/**
+ * @swagger
+ * /api/productos:
+ *   get:
+ *     summary: Lista todos los productos (menú)
+ *     tags: [Productos]
+ *     responses:
+ *       200:
+ *         description: Lista de productos obtenida exitosamente
+ */
 router.get("/", obtenerProductos);
 router.get("/:id", obtenerProductoPorId);
 
