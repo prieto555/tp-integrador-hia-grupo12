@@ -9,7 +9,12 @@ const Historial = sequelize.define('Historial', {
     ip: { type: DataTypes.STRING, allowNull: true }
 }, {
     tableName: 'historial_accesos',
-    timestamps: false
+    timestamps: false,
+    indexes: [
+        {
+            fields: ['fechaHora']
+        }
+    ]
 });
 
 // Relacion: Un Usuario tiene muchos registros en el Historial

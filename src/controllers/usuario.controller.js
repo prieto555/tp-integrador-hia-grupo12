@@ -13,8 +13,12 @@ usuarioCtrl.getUsuarios = async (req, res) => {
             const limit = parseInt(size, 10);
             const offset = parseInt(page, 10) * limit;
 
+            const { Op } = require('sequelize');
             const { count, rows } = await Usuario.findAndCountAll({
-                include: [{ model: Rol }],
+                include: [{ 
+                    model: Rol,
+                    where: { tipo: { [Op.ne]: 'Cliente' } }
+                }],
                 limit,
                 offset
             });
@@ -27,8 +31,12 @@ usuarioCtrl.getUsuarios = async (req, res) => {
             });
         }
 
+        const { Op } = require('sequelize');
         const usuarios = await Usuario.findAll({
-            include: [{ model: Rol }]
+            include: [{ 
+                model: Rol,
+                where: { tipo: { [Op.ne]: 'Cliente' } }
+            }]
         });
         res.json(usuarios);
     } catch (error) {
