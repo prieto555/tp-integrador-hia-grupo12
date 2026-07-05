@@ -15,7 +15,7 @@ router.post('/', [
     verificarPermiso('gestionar_usuarios'),
     body('nombre', 'El nombre es obligatorio').notEmpty(),
     body('apellido', 'El apellido es obligatorio').notEmpty(),
-    body('dni', 'El DNI es obligatorio y debe tener al menos 7 caracteres').isLength({ min: 7 }),
+    body('dni', 'El DNI debe tener al menos 7 caracteres').optional({ checkFalsy: true }).isLength({ min: 7 }),
     body('email', 'El email debe ser válido').isEmail(),
     body('password', 'El password debe tener al menos 6 caracteres').isLength({ min: 6 }),
     validarCampos
@@ -28,7 +28,7 @@ router.put('/:id', [
     verificarPermiso('gestionar_usuarios'),
     body('nombre', 'El nombre es obligatorio').notEmpty(),
     body('apellido', 'El apellido es obligatorio').notEmpty(),
-    body('dni', 'El DNI es obligatorio y debe tener al menos 7 caracteres').isLength({ min: 7 }),
+    body('dni', 'El DNI debe tener al menos 7 caracteres').optional({ checkFalsy: true }).isLength({ min: 7 }),
     body('email', 'El email debe ser válido').isEmail(),
     validarCampos
 ], usuarioCtrl.updateUsuario);

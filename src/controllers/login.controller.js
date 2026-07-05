@@ -67,7 +67,7 @@ loginCtrl.login = async (req, res) => {
 };
 
 const { OAuth2Client } = require('google-auth-library');
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || '123-dummy-client.apps.googleusercontent.com');
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID || '317530665710-rclujld7vo1j9vangvt5enqnghkilde4.apps.googleusercontent.com');
 
 loginCtrl.googleLogin = async (req, res) => {
     const { token } = req.body;
@@ -79,12 +79,13 @@ loginCtrl.googleLogin = async (req, res) => {
     try {
         const ticket = await googleClient.verifyIdToken({
             idToken: token,
-            audience: process.env.GOOGLE_CLIENT_ID || '123-dummy-client.apps.googleusercontent.com',
+            audience: process.env.GOOGLE_CLIENT_ID || '317530665710-rclujld7vo1j9vangvt5enqnghkilde4.apps.googleusercontent.com',
         });
         
         const payload = ticket.getPayload();
         const email = payload.email;
-        const nombre = payload.name;
+        const nombre = payload.given_name || payload.name || 'Usuario';
+        const apellido = payload.family_name || 'Google';
         
         // Buscar si existe el usuario
         let usuario = await Usuario.findOne({ 
@@ -106,7 +107,9 @@ loginCtrl.googleLogin = async (req, res) => {
             usuario = await Usuario.create({
                 email,
                 nombre,
-                password: hash
+                apellido,
+                password: hash,
+                dni: null // DNI is now optional
             });
             await usuario.addRol(rolCliente);
             
