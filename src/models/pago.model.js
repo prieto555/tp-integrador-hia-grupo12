@@ -2,7 +2,7 @@ const { DataTypes } = require("sequelize");
 const sequelize = require("../../config/database");
 const Pedido = require("./pedido.model");
 const Caja = require("./caja.model");
-
+const Usuario = require("./usuario.model");
 const Pago = sequelize.define("Pago", {
   idPago: {
     type: DataTypes.INTEGER,
@@ -36,5 +36,7 @@ Pedido.hasMany(Pago, { foreignKey: "idPedido", as: "pagos" });
 
 Pago.belongsTo(Caja, { foreignKey: "idCaja", as: "caja" });
 Caja.hasMany(Pago, { foreignKey: "idCaja", as: "pagos" });
+
+Pedido.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
 
 module.exports = Pago;

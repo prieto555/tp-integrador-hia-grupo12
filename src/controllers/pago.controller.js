@@ -2,11 +2,20 @@ const Pago = require("../models/pago.model");
 const Pedido = require("../models/pedido.model");
 const Caja = require("../models/caja.model");
 const Mesa = require("../models/mesa.model");
+const Usuario = require("../models/usuario.model");
 const sequelize = require("../../config/database");
-
+const nodemailer = require('nodemailer');
 // SDK de MercadoPago
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
-
+//correo
+// Configuración del transportador de Nodemailer
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS,
+  },
+});
 // registrarPago
 const registrarPago = async (req, res) => {
   const { idPedido, metodoPago, referenciaExterna } = req.body;
@@ -140,7 +149,7 @@ const recibirWebhookMP = async (req, res) => {
       return res.status(200).json({ message: "El pago no tiene idPedido asociado" });
     }
 
-    const pedido = await Pedido.findByPk(idPedido, { transaction: t });
+    const pedido = await Pedido.findByPk(idPedido, { include: [{ model: Usuario, as: 'usuario' }], transaction: t });
     if (!pedido || pedido.estado === "PAGADO") {
       await t.rollback();
       return res.status(200).json({ message: "Pedido no válido o ya pagado" });
@@ -169,14 +178,41 @@ const recibirWebhookMP = async (req, res) => {
     await pedido.update({ estado: "PAGADO" }, { transaction: t });
 
     await t.commit();
+    //_____________________________________correo_____________________________
+    const emailDestino = pedido.usuario.email; 
+    const nombreUsuario = pedido.usuario.nombre;
+console.log("Enviando mail a:", emailDestino);
+// Configuramos el contenido del correo
+const mailOptions = {
+  from: `"RestoYa" <${process.env.GMAIL_USER}>`,
+  to: emailDestino, // ← ¡Acá ahora va a funcionar CUALQUIER mail dinámico de la BD!
+  subject: `🍽️ ¡Tu pedido N° ${pedido.idPedido} ha sido pagado! - RestoYa`,
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+      <h2 style="color: #ff4757; text-align: center;">¡Muchas gracias por tu compra, ${nombreUsuario}!</h2>
+      <p style="font-size: 16px; color: #333;">Te confirmamos que hemos recibido tu pago con éxito.</p>
+      <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+      <p style="font-size: 14px; color: #777; text-align: center;">Este es un correo automático de la simulación del sistema RestoYa.</p>
+    </div>
+  `
+};
+
+// Enviamos el mail a través de Gmail
+await transporter.sendMail(mailOptions);
+console.log(`📧 Correo enviado con éxito vía Gmail a: ${emailDestino}`);
+
     res.status(200).json({ message: "Webhook procesado con éxito. Pago registrado." });
 
   } catch (error) {
-    await t.rollback();
+    try {
+      await t.rollback();
+    } catch (rollbackError) {
+    }
+    console.log("❌ ERROR CRÍTICO EN EL WEBHOOK:", error);
     res.status(500).json({ message: "Error en Webhook", error: error.message });
   }
 };
-
+//-------------------------------------------------------------
 // obtenerPagos
 const obtenerPagos = async (req, res) => {
   try {
