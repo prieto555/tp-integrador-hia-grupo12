@@ -57,7 +57,9 @@ graph LR
 3. **Email API (`nodemailer`):** 
    - **Integración:** Servicio para notificaciones vía correo electrónico a los usuarios.
 4. **Chatbot API:** 
-   - **Integración:** Respuestas automatizadas para atención al cliente.
+   - **Integración:** Respuestas automatizadas para atención al cliente y asistencia en la navegación del menú.
+5. **Open-Meteo API (Clima en tiempo real):**
+   - **Integración:** El frontend consume esta API pública para obtener el estado del clima actual. Si detecta lluvia, el sistema muestra automáticamente una alerta a los clientes indicando posibles demoras en el Delivery.
 
 ---
 
@@ -113,11 +115,18 @@ La documentación interactiva completa puede probarse levantando el servidor e i
 | GET | `/` | Lista los pedidos | Gerente, Cajero |
 | PUT | `/:id/estado` | Cambia el estado del pedido | Gerente, Cocina |
 
+### Caja (`/api/pagos` y `/api/reportes`)
+| Método | Ruta | Descripción | Acceso |
+|---|---|---|---|
+| POST | `/api/pagos` | Registra un cobro (Efectivo/MercadoPago) | Cajero |
+| GET | `/api/reportes/caja/:id/pdf` | Genera el reporte PDF del turno | Cajero, Gerente |
+| GET | `/api/reportes/caja/:id/excel` | Exporta la recaudación a Excel | Cajero, Gerente |
+
 ### Cocina (`/api/cocina`)
 | Método | Ruta | Descripción | Acceso |
 |---|---|---|---|
-| GET | `/items-pendientes` | Lista platos/bebidas por preparar | Cocina, Gerente |
-| PUT | `/marcar-listo/:id` | Cambia a "LISTO" un item | Cocina, Gerente |
+| GET | `/items-pendientes` | Lista **exclusivamente platos y postres** por preparar (filtra bebidas) | Cocina, Gerente |
+| PUT | `/marcar-listo/:id` | Cambia a "LISTO_PARA_ENTREGA" un item | Cocina, Gerente |
 
 ---
 *Desarrollado para la cátedra Programación y Servicios Web - UNJu*
