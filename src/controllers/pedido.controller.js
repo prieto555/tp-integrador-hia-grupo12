@@ -3,7 +3,7 @@ const Mesa = require("../models/mesa.model");
 
 // crearPedido (ahora soporta Detalles y tipoPedido)
 const crearPedido = async (req, res) => {
-  const { idMesa, tipoPedido, detalles, telefonoCliente } = req.body;
+  const { idMesa, tipoPedido, detalles, telefonoCliente, usuarioId } = req.body;
   // tipoPedido por defecto es LOCAL si no viene
   const tipo = tipoPedido || 'LOCAL';
 
@@ -20,6 +20,7 @@ const crearPedido = async (req, res) => {
     const nuevoPedido = await Pedido.create({ 
       tipoPedido: tipo, 
       idMesa: tipo === 'LOCAL' ? idMesa : null, 
+      usuarioId: usuarioId || null,
       total: 0
     });
 
