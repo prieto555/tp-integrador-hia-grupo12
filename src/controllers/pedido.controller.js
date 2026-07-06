@@ -67,7 +67,14 @@ const crearPedido = async (req, res) => {
 const obtenerPedidos = async (req, res) => {
   try {
     const pedidos = await Pedido.findAll({
-      include: [{ model: Mesa, as: "mesa" }],
+      include: [
+        { model: Mesa, as: "mesa" },
+        { 
+          model: require('../models/detallePedido.model'), 
+          as: "detalles",
+          include: ["producto"]
+        }
+      ],
     });
     res.json(pedidos);
   } catch (error) {
