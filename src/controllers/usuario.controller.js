@@ -17,7 +17,7 @@ usuarioCtrl.getUsuarios = async (req, res) => {
             const { count, rows } = await Usuario.findAndCountAll({
                 include: [{ 
                     model: Rol,
-                    where: { tipo: { [Op.ne]: 'Cliente' } }
+                    where: { tipo: { [Op.ne]: 'CLIENTE' } }
                 }],
                 limit,
                 offset
@@ -35,7 +35,7 @@ usuarioCtrl.getUsuarios = async (req, res) => {
         const usuarios = await Usuario.findAll({
             include: [{ 
                 model: Rol,
-                where: { tipo: { [Op.ne]: 'Cliente' } }
+                where: { tipo: { [Op.ne]: 'CLIENTE' } }
             }]
         });
         res.json(usuarios);
