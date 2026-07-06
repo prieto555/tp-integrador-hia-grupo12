@@ -55,6 +55,7 @@ app.use('/api/caja', require('./src/routes/caja.route'));
 app.use('/api/roles', require('./src/routes/rol.route'));
 app.use('/api/funciones', require('./src/routes/funcion.route'));
 app.use('/api/reportes', require('./src/routes/reporte.route'));
+app.use('/api/dashboard', require('./src/routes/dashboard.route'));
 // Swagger Setup
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger.config');
