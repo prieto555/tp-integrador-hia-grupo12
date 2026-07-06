@@ -112,7 +112,7 @@ const obtenerPedidosCocina = async (req, res) => {
             model: require('../models/producto.model'),
             as: "producto",
             where: {
-              categoria: ['entrada', 'plato_principal', 'postre'] // Filtramos bebidas
+              categoria: ['plato_principal', 'postre'] // Filtramos bebidas
             }
           }]
         }

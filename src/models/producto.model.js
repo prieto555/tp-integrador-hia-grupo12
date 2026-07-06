@@ -4,7 +4,6 @@ const sequelize = require("../../config/database");
 // Mapea cada categoria a si pasa o no por cocina.
 // Cocina usa esto para filtrar y mostrar SOLO comida, nunca bebidas.
 const PRODUCTO_REQUIERE_PREPARACION = {
-  entrada: true,
   plato_principal: true,
   postre: true,
   bebida: false,
@@ -41,7 +40,7 @@ const Producto = sequelize.define("Producto", {
     allowNull: true,
   },
   categoria: {
-    type: DataTypes.ENUM("entrada", "plato_principal", "bebida", "postre"),
+    type: DataTypes.ENUM("plato_principal", "bebida", "postre"),
     allowNull: false,
   },
 }, {
