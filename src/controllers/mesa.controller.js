@@ -40,7 +40,7 @@ const crearMesa = async (req, res) => {
   }
 };
 
-// liberarMesa — pone la mesa en LIBRE
+// liberarMesa — pone la mesa en LIBRE y cierra pedidos activos
 const liberarMesa = async (req, res) => {
   try {
     const mesa = await Mesa.findByPk(req.params.id);
@@ -49,8 +49,20 @@ const liberarMesa = async (req, res) => {
     if (mesa.estado === "LIBRE")
       return res.status(400).json({ message: "La mesa ya está libre" });
 
+    // 1. Cerrar todos los pedidos activos de esta mesa para que no queden "fantasmas"
+    const { Op } = require("sequelize");
+    await Pedido.update(
+      { estado: "PAGADO" },
+      { where: { 
+          idMesa: mesa.idMesa, 
+          estado: { [Op.notIn]: ["PAGADO", "CANCELADO"] } 
+        } 
+      }
+    );
+
+    // 2. Liberar la mesa
     await mesa.update({ estado: "LIBRE" });
-    res.json({ message: "Mesa liberada correctamente", mesa });
+    res.json({ message: "Mesa liberada y pedidos cerrados", mesa });
   } catch (error) {
     res.status(500).json({ message: "Error al liberar mesa", error: error.message });
   }
