@@ -14,7 +14,7 @@ app.use(helmet()); // Protege cabeceras HTTP
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 10, // Limita cada IP a 10 peticiones de login por ventana
+  max: 100, // Aumentado a 100 para permitir pruebas intensivas sin bloqueos
   message: "Demasiados intentos de inicio de sesión, intente de nuevo en 15 minutos."
 });
 
