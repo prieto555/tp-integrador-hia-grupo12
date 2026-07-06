@@ -64,7 +64,7 @@ const registrarPago = async (req, res) => {
             }
           ],
           external_reference: idPedido.toString(),
-          notification_url: `${process.env.NGROK_URL}/api/pagos/webhook`
+          notification_url: `${process.env.RENDER_EXTERNAL_URL || process.env.NGROK_URL || 'https://proybackendgrupo13-9bp9.onrender.com'}/api/pagos/webhook`
         }
       });
 
