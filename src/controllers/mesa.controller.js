@@ -103,4 +103,30 @@ const eliminarMesa = async (req, res) => {
   }
 };
 
-module.exports = { obtenerMesas, obtenerMesaPorId, crearMesa, liberarMesa, cambiarEstado, eliminarMesa };
+// actualizarMesa
+const actualizarMesa = async (req, res) => {
+  const { numMesa, capacidad } = req.body;
+  try {
+    const mesa = await Mesa.findByPk(req.params.id);
+    if (!mesa) return res.status(404).json({ message: "Mesa no encontrada" });
+
+    // Verificar si el numMesa ya existe en OTRA mesa
+    if (numMesa && numMesa !== mesa.numMesa) {
+      const mesaExistente = await Mesa.findOne({ where: { numMesa } });
+      if (mesaExistente) {
+        return res.status(400).json({ message: `Ya existe la mesa número ${numMesa}` });
+      }
+    }
+
+    await mesa.update({ 
+      numMesa: numMesa || mesa.numMesa, 
+      capacidad: capacidad || mesa.capacidad 
+    });
+
+    res.json({ message: "Mesa actualizada correctamente", mesa });
+  } catch (error) {
+    res.status(500).json({ message: "Error al actualizar mesa", error: error.message });
+  }
+};
+
+module.exports = { obtenerMesas, obtenerMesaPorId, crearMesa, liberarMesa, cambiarEstado, eliminarMesa, actualizarMesa };
