@@ -65,6 +65,12 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger.config');
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Redirigir la ruta principal (/) a la documentación de Swagger para evitar el error 404
+app.get('/', (req, res) => {
+  res.redirect('/api-docs');
+});
+
 //setting
 app.set('port', process.env.PORT || 3000);
 
