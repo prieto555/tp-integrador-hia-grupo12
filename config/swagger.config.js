@@ -13,6 +13,10 @@ const options = {
         url: 'http://localhost:3000',
         description: 'Servidor de Desarrollo Local',
       },
+      {
+        url: 'https://proybackendgrupo13-9bp9.onrender.com',
+        description: 'Servidor de Producción (Render)',
+      }
     ],
     components: {
       securitySchemes: {
