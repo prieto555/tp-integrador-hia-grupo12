@@ -19,6 +19,10 @@ const authLimiter = rateLimit({
 });
 
 app.use(express.json());
+
+// Inyectamos nuestro Middleware Global de Auditoría
+const auditarAccion = require('./src/middlewares/auditoria.middleware');
+app.use(auditarAccion);
 // Configuración de CORS dinámica
 const corsOptions = {
   origin: function (origin, callback) {
