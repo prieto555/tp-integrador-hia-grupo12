@@ -26,14 +26,17 @@ const Producto = sequelize.define("Producto", {
   precioCosto: {
     type: DataTypes.FLOAT,
     allowNull: true,
+    validate: { min: 0 }
   },
   porcentajeGanancia: {
     type: DataTypes.FLOAT,
     allowNull: true,
+    validate: { min: 0 }
   },
   precio: {
     type: DataTypes.FLOAT,
     allowNull: false,
+    validate: { min: 0 }
   },
   imagenUrl: {
     type: DataTypes.STRING,

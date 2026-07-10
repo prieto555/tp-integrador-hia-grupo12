@@ -16,6 +16,7 @@ const Pago = sequelize.define("Pago", {
   monto: {
     type: DataTypes.FLOAT,
     allowNull: false,
+    validate: { min: 0 }
   },
   referenciaExterna: {
     type: DataTypes.STRING,

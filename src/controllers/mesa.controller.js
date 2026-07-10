@@ -29,6 +29,9 @@ const crearMesa = async (req, res) => {
   if (!numMesa || !capacidad)
     return res.status(400).json({ message: "numMesa y capacidad son obligatorios" });
 
+  if (numMesa <= 0 || capacidad <= 0)
+    return res.status(400).json({ message: "El número de mesa y la capacidad deben ser mayores a 0" });
+
   try {
     const nueva = await Mesa.create({ numMesa, capacidad });
     res.status(201).json({ message: "Mesa creada correctamente", mesa: nueva });
@@ -106,6 +109,10 @@ const eliminarMesa = async (req, res) => {
 // actualizarMesa
 const actualizarMesa = async (req, res) => {
   const { numMesa, capacidad } = req.body;
+
+  if ((numMesa !== undefined && numMesa <= 0) || (capacidad !== undefined && capacidad <= 0))
+    return res.status(400).json({ message: "El número de mesa y la capacidad deben ser mayores a 0" });
+
   try {
     const mesa = await Mesa.findByPk(req.params.id);
     if (!mesa) return res.status(404).json({ message: "Mesa no encontrada" });

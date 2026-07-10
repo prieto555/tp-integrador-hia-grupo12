@@ -11,11 +11,13 @@ const Mesa = sequelize.define("Mesa", {
     type: DataTypes.INTEGER,
     allowNull: false,
     unique: true,
+    validate: { min: 1 }
   },
   capacidad: {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 2, //defecto 2 mesas
+    validate: { min: 1 }
   },
   estado: {
     type: DataTypes.ENUM("LIBRE", "OCUPADA", "RESERVADA"),

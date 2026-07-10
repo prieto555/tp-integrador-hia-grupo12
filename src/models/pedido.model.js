@@ -24,6 +24,7 @@ const Pedido = sequelize.define("Pedido", {
   total: {
     type: DataTypes.FLOAT,
     defaultValue: 0,
+    validate: { min: 0 }
   },
 }, {
   tableName: "pedidos",
