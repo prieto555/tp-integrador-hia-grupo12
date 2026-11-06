@@ -1,0 +1,32 @@
+# --- Secretos: nunca al repositorio ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# --- Volcados y copias de la base: van al volumen y a Nextcloud, no acá ---
+*.sql
+!infra/postgres/**/*.sql
+*.dump
+*.tar.gz
+backups/
+
+# --- Dependencias y artefactos de compilación ---
+node_modules/
+dist/
+.angular/
+coverage/
+
+# --- Sistema operativo y editores ---
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# --- Logs ---
+*.log
+npm-debug.log*
