@@ -1,0 +1,89 @@
+<div class="d-flex" style="min-height: 100vh; background-color: #121212;">
+    <!-- Sidebar fijo -->
+    <app-sidebar></app-sidebar>
+    
+    <!-- Contenido principal -->
+    <div class="content p-4 w-100" style="margin-left: 100px;">
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="fw-bold text-white mb-0">
+                    <span class="material-symbols-outlined align-middle fs-1 me-2 text-warning">history</span>
+                    Auditoría: Historial de Accesos
+                </h2>
+                <button class="btn btn-outline-warning shadow-sm hover-scale" (click)="cargarHistorial()">
+                    <span class="material-symbols-outlined align-middle me-1">refresh</span>
+                    Actualizar
+                </button>
+            </div>
+
+            <!-- Spinner de carga -->
+            <div *ngIf="cargando" class="text-center py-5">
+                <div class="spinner-border text-warning" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+
+            <!-- Error -->
+            <div *ngIf="error" class="alert alert-danger bg-danger bg-opacity-10 border-danger text-danger" role="alert">
+                {{ error }}
+            </div>
+
+            <!-- Tabla de Historial -->
+            <div *ngIf="!cargando && !error" class="card bg-dark shadow-lg border-0 rounded-4 overflow-hidden glass-panel">
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover mb-0 align-middle">
+                        <thead class="border-bottom border-secondary border-opacity-50">
+                            <tr>
+                                <th scope="col" class="ps-4 text-warning fw-bold">ID Acceso</th>
+                                <th scope="col" class="text-warning fw-bold">Usuario</th>
+                                <th scope="col" class="text-warning fw-bold">Email</th>
+                                <th scope="col" class="text-warning fw-bold">Método</th>
+                                <th scope="col" class="text-warning fw-bold">IP</th>
+                                <th scope="col" class="text-warning fw-bold">Fecha y Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr *ngFor="let item of paginatedHistorial" class="border-bottom border-secondary border-opacity-25">
+                                <td class="ps-4 fw-medium text-white-50">#{{ item.idHistorial }}</td>
+                                <td class="fw-bold" [ngClass]="{'text-white': item.Usuario, 'text-secondary fst-italic': !item.Usuario}">
+                                    {{ item.Usuario ? (item.Usuario.nombre + ' ' + item.Usuario.apellido) : 'Usuario Anónimo (Invitado)' }}
+                                </td>
+                                <td class="text-light" [ngClass]="{'text-white-50': !item.Usuario}">
+                                    {{ item.Usuario ? item.Usuario.email : 'Sin email' }}
+                                </td>
+                                <td>
+                                    <span class="badge rounded-pill px-3 py-2 fw-bold text-white shadow-sm" 
+                                          [ngClass]="{'bg-danger': item.metodo === 'GOOGLE', 'bg-primary': item.metodo === 'EMAIL', 'bg-success': item.metodo !== 'GOOGLE' && item.metodo !== 'EMAIL'}">
+                                        <i class="fa-solid me-1" [ngClass]="{'fa-google fa-brands': item.metodo === 'GOOGLE', 'fa-envelope': item.metodo === 'EMAIL', 'fa-shield-halved': item.metodo !== 'GOOGLE' && item.metodo !== 'EMAIL'}"></i>
+                                        {{ item.metodo }}
+                                    </span>
+                                </td>
+                                <td class="text-white-50 small">{{ item.ip || 'Localhost/Desconocida' }}</td>
+                                <td class="text-light">{{ item.fechaHora | date:'medium' }}</td>
+                            </tr>
+                            <tr *ngIf="historial.length === 0">
+                                <td colspan="6" class="text-center py-5 text-white-50">
+                                    <span class="material-symbols-outlined fs-1 d-block mb-2 text-secondary">history_toggle_off</span>
+                                    No hay registros de accesos todavía.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Paginación -->
+                <div class="card-footer bg-transparent border-top border-secondary border-opacity-25 py-3 d-flex justify-content-between align-items-center px-4" *ngIf="historial.length > 0">
+                    <span class="text-white-50 small">Página {{ currentPage }} de {{ totalPages }}</span>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-warning btn-sm fw-bold px-3" [disabled]="currentPage === 1" (click)="prevPage()">
+                            <i class="fas fa-chevron-left me-1"></i> Anterior
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm fw-bold px-3" [disabled]="currentPage === totalPages" (click)="nextPage()">
+                            Siguiente <i class="fas fa-chevron-right ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,63 @@
+/* You can add global styles to this file, and also import other style files */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+/* FIX CONTRASTE GLOBAL PARA BOTONES Y TEXTOS HEREDADOS */
+
+/* Botones con fondo claro (Amarillo, Celeste, Blanco) necesitan texto oscuro SIEMPRE */
+.btn-warning, .btn-info, .btn-light {
+    color: #121212 !important;
+}
+
+.btn-warning i, .btn-info i, .btn-light i, .btn-warning span, .btn-info span, .btn-light span {
+    color: #121212 !important;
+}
+
+/* Hover de botones Outline claros (cuando se rellenan) necesitan texto oscuro */
+.btn-outline-warning:hover, .btn-outline-info:hover, .btn-outline-light:hover {
+    color: #121212 !important;
+}
+.btn-outline-warning:hover i, .btn-outline-info:hover i, .btn-outline-light:hover i {
+    color: #121212 !important;
+}
+
+/* Botones con fondo oscuro (Rojo, Verde, Azul, Negro) necesitan texto blanco SIEMPRE */
+.btn-danger, .btn-success, .btn-primary, .btn-dark, .btn-secondary {
+    color: #ffffff !important;
+}
+
+.btn-danger i, .btn-success i, .btn-primary i, .btn-dark i, .btn-secondary i,
+.btn-danger span, .btn-success span, .btn-primary span, .btn-dark span, .btn-secondary span {
+    color: #ffffff !important;
+}
+
+/* Hover de botones Outline oscuros */
+.btn-outline-danger:hover, .btn-outline-success:hover, .btn-outline-primary:hover, .btn-outline-dark:hover {
+    color: #ffffff !important;
+}
+.btn-outline-danger:hover i, .btn-outline-success:hover i, .btn-outline-primary:hover i, .btn-outline-dark:hover i {
+    color: #ffffff !important;
+}
+
+/* Asegurar que el texto normal sea bien blanco en contenedores oscuros */
+.text-white {
+    color: #ffffff !important;
+}
+
+/* Mejorar el text-muted para que no sea tan oscuro en fondos negros */
+.text-muted {
+    color: #adb5bd !important;
+}
+
+/* Fix para inputs */
+.custom-input::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Asegurar que las tarjetas oscuras tengan texto claro */
+.bg-dark {
+    color: #f8f9fa;
+}

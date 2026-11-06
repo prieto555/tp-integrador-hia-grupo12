@@ -1,0 +1,76 @@
+.glass-panel {
+    background: rgba(30, 30, 30, .75);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+.dashboard-title {
+    font-size: 1.8rem;
+}
+
+.dashboard-label {
+    display: block;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: .80rem;
+    font-weight: 600;
+}
+
+.dashboard-number {
+    margin-top: .8rem;
+    margin-bottom: 0;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.chart-container {
+    position: relative;
+    width: 100%;
+    height: 380px;
+    min-height: 380px;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.pie-chart {
+    height: 380px;
+    max-width: 450px;
+    margin: auto;
+}
+
+@media (max-width:991px) {
+    .chart-container {
+        height: 320px;
+        min-height: 320px;
+    }
+    .pie-chart {
+        max-width: 340px;
+    }
+}
+
+@media (max-width:576px) {
+    .dashboard-title {
+        font-size: 1.35rem;
+    }
+
+    .dashboard-number {
+        font-size: 1.5rem;
+    }
+
+    .dashboard-label {
+        font-size: .75rem;
+    }
+
+    .chart-container {
+        height: 260px;
+        min-height: 260px;
+    }
+
+    .pie-chart {
+        max-width: 260px;
+    }
+}

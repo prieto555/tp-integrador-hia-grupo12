@@ -1,0 +1,62 @@
+<header class="glass-header text-white d-flex align-items-center shadow-lg position-sticky top-0 z-3 px-2 px-md-5 py-2">
+    
+    <!-- Botón Menú Empleados (Solo si está autenticado y NO es cliente) -->
+    <button *ngIf="authService.estaAutenticado() && !authService.tieneRol('Cliente')" class="btn btn-dark rounded-circle me-2 me-md-3 hover-scale shadow-sm d-flex align-items-center justify-content-center flex-shrink-0" 
+        style="width: 45px; height: 45px;"
+        type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar" aria-controls="sidebar">
+        <i class="fas fa-bars fs-5"></i>
+    </button>
+    
+    <!-- Título / Logo clickeable dinámico según el Rol -->
+    <a [routerLink]="authService.tieneRol('Cocina') ? '/cocina' : (authService.tieneRol('Cajero') ? '/caja' : (authService.tieneRol('Gerente') ? '/dashboard' : '/home'))" class="text-decoration-none text-white d-flex align-items-center gap-2 logo-link flex-shrink-0">
+        <div class="logo-icon bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-sm">
+            <i class="fas fa-utensils"></i>
+        </div>
+        <h2 class="fs-4 fw-bold mb-0 letter-spacing-1 title-glow d-none d-lg-block">RESTO<span class="text-warning">YA</span></h2>
+    </a>
+
+    <!-- Navegación Cliente (Píldoras centrales, siempre visible para anonimos y clientes) -->
+    <nav *ngIf="!authService.estaAutenticado() || authService.tieneRol('Cliente')" class="mx-auto d-flex gap-1 gap-md-3 bg-black bg-opacity-25 p-1 p-md-2 rounded-pill border border-secondary border-opacity-25 shadow-sm">
+        <a routerLink="/platos" routerLinkActive="active-nav" class="nav-pill text-decoration-none text-white px-3 px-md-4 py-2 rounded-pill fw-semibold transition-all d-flex align-items-center">
+            <i class="fas fa-hamburger text-warning" [class.me-2]="true" [class.me-md-2]="true"></i> 
+            <span class="d-none d-sm-inline">Platos</span>
+        </a>
+        <a routerLink="/bebidas" routerLinkActive="active-nav" class="nav-pill text-decoration-none text-white px-3 px-md-4 py-2 rounded-pill fw-semibold transition-all d-flex align-items-center">
+            <i class="fas fa-glass-martini-alt text-info" [class.me-2]="true" [class.me-md-2]="true"></i> 
+            <span class="d-none d-sm-inline">Bebidas</span>
+        </a>
+        <a routerLink="/postres" routerLinkActive="active-nav" class="nav-pill text-decoration-none text-white px-3 px-md-4 py-2 rounded-pill fw-semibold transition-all d-flex align-items-center">
+            <i class="fas fa-ice-cream text-danger" [class.me-2]="true" [class.me-md-2]="true"></i> 
+            <span class="d-none d-sm-inline">Postres</span>
+        </a>
+    </nav>
+
+    <div class="ms-auto d-flex align-items-center gap-3">
+        
+        <!-- carrito (Oculto para Cocina y Cajero que no toman pedidos) -->
+        <button *ngIf="!authService.tieneRol('Cocina') && !authService.tieneRol('Cajero')" class="btn btn-warning rounded-circle d-flex align-items-center justify-content-center shadow-lg position-relative hover-scale cart-btn"
+            style="width: 45px; height: 45px;" type="button" data-bs-toggle="offcanvas" data-bs-target="#pedidos" aria-controls="pedidos">
+            <i class="fas fa-shopping-cart fs-5 text-dark"></i>
+            <span *ngIf="cantidadCarrito > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-dark border-2 cart-badge">
+                {{cantidadCarrito}}
+            </span>
+        </button>
+
+        <!-- login / logout -->
+        <button class="btn btn-outline-secondary btn-sm rounded-pill px-3 py-2 ms-2 hover-scale fw-bold border-secondary border-opacity-50 text-white staff-btn" 
+                *ngIf="!authService.estaAutenticado()" [routerLink]="['/login']">
+            <i class="fas fa-user-shield me-2"></i>Staff
+        </button>
+        
+        <div *ngIf="authService.estaAutenticado()" class="d-flex align-items-center gap-3 ms-2 border-start border-secondary border-opacity-50 ps-3">
+            <div class="d-none d-md-flex align-items-center bg-dark rounded-pill px-3 py-1 border border-secondary border-opacity-50">
+                <i class="fas fa-user-circle text-warning fs-5 me-2"></i>
+                <span class="text-white fw-semibold small">{{ (authService.usuario$ | async)?.nombre }}</span>
+            </div>
+            <button class="btn btn-danger rounded-circle hover-scale shadow-sm d-flex align-items-center justify-content-center" 
+                    style="width: 40px; height: 40px;" (click)="logout()" title="Cerrar Sesión">
+                <i class="fas fa-power-off"></i>
+            </button>
+        </div>
+    </div>
+</header>

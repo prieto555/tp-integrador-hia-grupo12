@@ -1,0 +1,108 @@
+<div class="container-fluid py-5 min-vh-100" style="background-color: #121212;">
+  <div class="container">
+    
+    <!-- Encabezado -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-5 gap-4">
+      <div>
+        <h2 class="text-white fw-bold mb-1"><i class="fas fa-users-cog text-warning me-2"></i> Gestión de Personal</h2>
+        <p class="text-muted mb-0">Administración de accesos y roles del sistema</p>
+      </div>
+      
+      <button class="btn btn-warning fw-bold py-2 px-4 shadow hover-scale rounded-3 text-dark d-flex align-items-center" (click)="crearUsuario()">
+        <i class="fas fa-user-plus me-2"></i> Registrar Usuario
+      </button>
+    </div>
+
+    <!-- Tabla Glass -->
+    <div class="card glass-panel border-0 rounded-4 shadow-lg overflow-hidden">
+      
+      <div *ngIf="loading" class="p-5 text-center">
+        <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+          <span class="visually-hidden">Cargando...</span>
+        </div>
+        <h5 class="text-white mt-3 fw-light">Cargando personal...</h5>
+      </div>
+
+      <div class="table-responsive" *ngIf="!loading">
+        <table class="table table-dark table-hover mb-0 custom-table align-middle">
+          <thead class="bg-black bg-opacity-50">
+            <tr>
+              <th class="py-3 px-4 fw-semibold text-uppercase text-muted small letter-spacing-1 border-0">Empleado</th>
+              <th class="py-3 px-4 fw-semibold text-uppercase text-muted small letter-spacing-1 border-0">DNI</th>
+              <th class="py-3 px-4 fw-semibold text-uppercase text-muted small letter-spacing-1 border-0">Correo Electrónico</th>
+              <th class="py-3 px-4 fw-semibold text-uppercase text-muted small letter-spacing-1 border-0">Rol Asignado</th>
+              <th class="py-3 px-4 fw-semibold text-uppercase text-muted small letter-spacing-1 border-0 text-end">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let user of usuarios" class="border-secondary border-opacity-25">
+              
+              <td class="py-3 px-4 border-0">
+                <div class="d-flex align-items-center">
+                  <div class="avatar-circle bg-secondary text-white fw-bold me-3">
+                    {{ user.nombre.charAt(0) }}{{ user.apellido.charAt(0) }}
+                  </div>
+                  <div>
+                    <h6 class="mb-0 fw-bold text-white">{{ user.nombre }} {{ user.apellido }}</h6>
+                  </div>
+                </div>
+              </td>
+              
+              <td class="py-3 px-4 border-0 text-light">{{ user.dni }}</td>
+              
+              <td class="py-3 px-4 border-0 text-light">{{ user.email }}</td>
+              
+              <td class="py-3 px-4 border-0">
+                <span class="badge px-3 py-2 rounded-pill fw-semibold border" *ngFor="let rol of user.Rols"
+                      [ngClass]="rol.nombre === 'Gerente' ? 'bg-warning text-dark border-warning' : 'bg-dark text-info border-info'">
+                  <i class="fas fa-shield-alt me-1"></i> {{ rol.nombre }}
+                </span>
+                <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-3 py-2 rounded-pill fw-semibold" *ngIf="!user.Rols || user.Rols.length === 0">
+                  <i class="fas fa-exclamation-triangle me-1"></i> Sin Rol
+                </span>
+              </td>
+              
+              <td class="py-3 px-4 border-0 text-end">
+                <div class="d-flex justify-content-end gap-2">
+                  <button class="btn btn-outline-info btn-sm rounded-circle d-flex align-items-center justify-content-center hover-scale shadow-sm action-btn" 
+                          (click)="editarUsuario(user.usuarioId)" title="Editar Perfil">
+                    <i class="fas fa-user-edit"></i>
+                  </button>
+                  <button class="btn btn-outline-danger btn-sm rounded-circle d-flex align-items-center justify-content-center hover-scale shadow-sm action-btn" 
+                          (click)="eliminarUsuario(user.usuarioId)" title="Revocar Acceso">
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </div>
+              </td>
+              
+            </tr>
+            
+            <tr *ngIf="usuarios.length === 0">
+              <td colspan="5" class="text-center py-5 border-0">
+                <div class="opacity-50">
+                  <i class="fas fa-users-slash fs-1 text-muted mb-3"></i>
+                  <h5 class="text-white fw-light">No hay personal registrado en el sistema.</h5>
+                </div>
+              </td>
+            </tr>
+            
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Paginación -->
+      <div class="card-footer bg-black bg-opacity-50 border-0 p-3 d-flex justify-content-between align-items-center" *ngIf="!loading && usuarios.length > 0">
+        <span class="text-muted small">Mostrando página {{ currentPage + 1 }} de {{ totalPages }} ({{ totalItems }} usuarios)</span>
+        <div class="btn-group">
+          <button class="btn btn-outline-warning btn-sm" [disabled]="currentPage === 0" (click)="cambiarPagina(currentPage - 1)">
+            <i class="fas fa-chevron-left me-1"></i> Anterior
+          </button>
+          <button class="btn btn-outline-warning btn-sm" [disabled]="currentPage === totalPages - 1" (click)="cambiarPagina(currentPage + 1)">
+            Siguiente <i class="fas fa-chevron-right ms-1"></i>
+          </button>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</div>

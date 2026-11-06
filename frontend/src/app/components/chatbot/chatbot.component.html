@@ -1,0 +1,34 @@
+<div class="chatbot-container" cdkDrag>
+    <!-- Ventana de Chat -->
+    <div class="chat-window shadow-lg border border-secondary" *ngIf="mostrarChat">
+        <div class="chat-header bg-dark text-warning p-3 d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold">Asistente IA</h6>
+            <button class="btn-close btn-close-white" (click)="toggleChat()"></button>
+        </div>
+
+        <div class="chat-body p-3 overflow-auto bg-light" style="height: 300px;">
+            <div *ngFor="let m of mensajes" class="mb-2" [ngClass]="{'text-end': m.emisor === 'usuario'}">
+                <span class="p-2 rounded-3 d-inline-block shadow-sm"
+                    [ngClass]="m.emisor === 'bot' ? 'bg-secondary text-white' : 'bg-warning text-dark'">
+                    {{ m.texto }}
+                </span>
+            </div>
+            <div *ngIf="cargando" class="text-muted small italic">IA escribiendo...</div>
+        </div>
+
+        <div class="chat-footer p-2 border-top bg-white">
+            <div class="input-group">
+                <input type="text" [(ngModel)]="nuevoMensaje" (keyup.enter)="preguntar()"
+                    class="form-control form-control-sm" placeholder="Escribí tu duda...">
+                <button class="btn btn-warning btn-sm" (click)="preguntar()" [disabled]="cargando">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botón Flotante -->
+    <button class="btn btn-warning btn-lg rounded-circle shadow-lg float-btn" (click)="toggleChat()">
+         <span class="material-symbols-outlined">chat</span>
+    </button>
+</div>

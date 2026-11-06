@@ -1,0 +1,144 @@
+<div class="container-fluid py-5 min-vh-100 d-flex justify-content-center align-items-start" style="background-color: #121212;">
+  
+  <div class="card glass-panel text-white border-0 rounded-4 shadow-lg w-100 mt-md-4" style="max-width: 800px;">
+    
+    <!-- Header -->
+    <div class="card-header border-bottom border-secondary border-opacity-25 p-4 d-flex justify-content-between align-items-center">
+      <h3 class="fw-bold mb-0 text-white d-flex align-items-center">
+        <i class="fas fa-user-edit text-warning me-3"></i> 
+        {{ isEdit ? 'Editar Perfil del Usuario' : 'Registrar Nuevo Usuario' }}
+      </h3>
+      <button class="btn btn-dark rounded-circle text-muted hover-scale" style="width: 40px; height: 40px;" (click)="cancelar()">
+        <i class="fas fa-times fs-5"></i>
+      </button>
+    </div>
+
+    <!-- Spinner -->
+    <div class="p-5 text-center" *ngIf="loading">
+      <div class="spinner-border text-warning mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+      <h5 class="fw-light text-muted">Cargando datos del usuario...</h5>
+    </div>
+
+    <!-- Formulario -->
+    <div class="card-body p-4 p-md-5" *ngIf="!loading">
+      <form [formGroup]="usuarioForm" (ngSubmit)="guardar()">
+        
+        <div class="row g-4">
+          <!-- Columna Izquierda -->
+          <div class="col-md-6">
+            <h5 class="text-warning mb-4 fw-semibold border-bottom border-secondary border-opacity-25 pb-2">Información Personal</h5>
+            
+            <div class="mb-3 position-relative pb-3">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">Nombre <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-user"></i></span>
+                <input type="text" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" 
+                       formControlName="nombre" placeholder="Ej: Juan"
+                       [ngClass]="{'is-invalid': usuarioForm.get('nombre')?.invalid && usuarioForm.get('nombre')?.touched}">
+              </div>
+              <div class="invalid-feedback d-block position-absolute" *ngIf="usuarioForm.get('nombre')?.invalid && usuarioForm.get('nombre')?.touched" style="bottom: -5px; font-size: 0.75rem;">
+                <span *ngIf="usuarioForm.get('nombre')?.errors?.['required']">El nombre es obligatorio.</span>
+                <span *ngIf="usuarioForm.get('nombre')?.errors?.['minlength']">Debe tener al menos 2 letras.</span>
+                <span *ngIf="usuarioForm.get('nombre')?.errors?.['pattern']">Solo se permiten letras.</span>
+              </div>
+            </div>
+
+            <div class="mb-3 position-relative pb-3">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">Apellido <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="far fa-user"></i></span>
+                <input type="text" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" 
+                       formControlName="apellido" placeholder="Ej: Pérez"
+                       [ngClass]="{'is-invalid': usuarioForm.get('apellido')?.invalid && usuarioForm.get('apellido')?.touched}">
+              </div>
+              <div class="invalid-feedback d-block position-absolute" *ngIf="usuarioForm.get('apellido')?.invalid && usuarioForm.get('apellido')?.touched" style="bottom: -5px; font-size: 0.75rem;">
+                <span *ngIf="usuarioForm.get('apellido')?.errors?.['required']">El apellido es obligatorio.</span>
+                <span *ngIf="usuarioForm.get('apellido')?.errors?.['minlength']">Debe tener al menos 2 letras.</span>
+                <span *ngIf="usuarioForm.get('apellido')?.errors?.['pattern']">Solo se permiten letras.</span>
+              </div>
+            </div>
+
+            <div class="mb-3 position-relative pb-3">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">DNI</label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-id-card"></i></span>
+                <input type="text" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" 
+                       formControlName="dni" placeholder="Ej: 12345678"
+                       [ngClass]="{'is-invalid': usuarioForm.get('dni')?.invalid && usuarioForm.get('dni')?.touched}">
+              </div>
+              <div class="invalid-feedback d-block position-absolute text-warning" *ngIf="usuarioForm.get('dni')?.errors?.['dniInvalido'] && usuarioForm.get('dni')?.touched" style="bottom: -5px; font-size: 0.75rem;">
+                El DNI debe tener exactamente 8 números.
+              </div>
+            </div>
+          </div>
+
+          <!-- Columna Derecha -->
+          <div class="col-md-6">
+            <h5 class="text-warning mb-4 fw-semibold border-bottom border-secondary border-opacity-25 pb-2">Credenciales y Rol</h5>
+            
+            <div class="mb-3 position-relative pb-3">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">Correo Electrónico <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-envelope"></i></span>
+                <input type="email" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" 
+                       formControlName="email" placeholder="correo@restoya.com"
+                       [ngClass]="{'is-invalid': usuarioForm.get('email')?.invalid && usuarioForm.get('email')?.touched}">
+              </div>
+              <div class="invalid-feedback d-block position-absolute" *ngIf="usuarioForm.get('email')?.invalid && usuarioForm.get('email')?.touched" style="bottom: -5px; font-size: 0.75rem;">
+                <span *ngIf="usuarioForm.get('email')?.errors?.['required']">El correo es obligatorio.</span>
+                <span *ngIf="usuarioForm.get('email')?.errors?.['email']">Debe ser un correo válido.</span>
+              </div>
+            </div>
+
+            <div class="mb-3 position-relative pb-3">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">Contraseña <span *ngIf="!isEdit" class="text-danger">*</span></label>
+              <div class="input-group mb-1">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-key"></i></span>
+                <input type="password" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" 
+                       formControlName="password" placeholder="********"
+                       [ngClass]="{'is-invalid': usuarioForm.get('password')?.invalid && usuarioForm.get('password')?.touched}">
+              </div>
+              <small class="text-info fw-semibold position-absolute" *ngIf="isEdit" style="bottom: -20px;"><i class="fas fa-info-circle me-1"></i>Deje en blanco para mantener la actual.</small>
+              <div class="invalid-feedback d-block position-absolute" *ngIf="usuarioForm.get('password')?.invalid && usuarioForm.get('password')?.touched" style="bottom: -5px; font-size: 0.75rem;">
+                <span *ngIf="usuarioForm.get('password')?.errors?.['required']">La contraseña es obligatoria.</span>
+                <span *ngIf="usuarioForm.get('password')?.errors?.['minlength']">Debe tener al menos 6 caracteres.</span>
+              </div>
+            </div>
+            
+            <div class="mb-3 position-relative pb-3" [ngClass]="{'mt-4': isEdit}">
+              <label class="form-label text-muted small text-uppercase fw-bold letter-spacing-1">Rol Asignado</label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-shield-alt"></i></span>
+                <select class="form-select custom-input bg-dark text-white border-secondary border-opacity-50" formControlName="rolId">
+                  <option [ngValue]="null">-- Sin Rol Principal --</option>
+                  <option *ngFor="let rol of roles" [ngValue]="rol.rolId">{{ rol.nombre }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer / Botones -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mt-5 pt-4 border-top border-secondary border-opacity-25 gap-3">
+          
+          <button type="button" class="btn btn-outline-danger px-4 py-2 hover-scale rounded-3 fw-bold w-100 w-md-auto" *ngIf="isEdit" (click)="eliminar()" [disabled]="saving">
+            <i class="fas fa-trash-alt me-2"></i> Eliminar Usuario
+          </button>
+          <div *ngIf="!isEdit" class="d-none d-md-block"></div> <!-- Spacer -->
+
+          <div class="d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
+            <button type="button" class="btn btn-dark border-secondary px-4 py-2 hover-scale rounded-3 fw-bold" (click)="cancelar()">
+              Cancelar
+            </button>
+            <button type="submit" class="btn btn-warning text-dark px-5 py-2 hover-scale rounded-3 fw-bold shadow-sm" [disabled]="usuarioForm.invalid || saving">
+              <span *ngIf="saving" class="spinner-border spinner-border-sm me-2 text-dark" role="status"></span>
+              <i *ngIf="!saving" class="fas fa-save me-2"></i>
+              {{ saving ? 'Guardando...' : 'Guardar Cambios' }}
+            </button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,64 @@
+.glass-header {
+  background: rgba(18, 18, 18, 0.85) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logo-icon {
+  width: 35px;
+  height: 35px;
+}
+
+.logo-link:hover .logo-icon {
+  transform: rotate(15deg) scale(1.1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.title-glow {
+  text-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
+  letter-spacing: 2px;
+}
+
+.nav-pill:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.active-nav {
+  background-color: #ffc107 !important;
+  color: #000 !important;
+  box-shadow: 0 0 15px rgba(255, 193, 7, 0.4);
+}
+
+.active-nav i {
+  color: #000 !important;
+}
+
+.hover-scale {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+.hover-scale:active {
+  transform: scale(0.95);
+}
+
+.cart-btn:hover {
+  box-shadow: 0 0 20px rgba(255, 193, 7, 0.6) !important;
+}
+
+.cart-badge {
+  font-size: 0.75rem;
+  padding: 0.35em 0.65em;
+}
+
+.staff-btn:hover {
+  background-color: #ffc107;
+  color: #000 !important;
+  border-color: #ffc107 !important;
+}

@@ -1,0 +1,36 @@
+.glass-panel {
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+}
+
+.custom-input {
+  transition: all 0.2s ease;
+}
+
+.custom-input:focus {
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.25);
+  border-color: #ffc107 !important;
+}
+
+select.custom-input option {
+  background-color: #1a1a1a;
+  color: #fff;
+}
+
+.hover-scale {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-scale:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+.hover-scale:active {
+  transform: translateY(1px);
+}
+
+.letter-spacing-1 {
+  letter-spacing: 1px;
+}

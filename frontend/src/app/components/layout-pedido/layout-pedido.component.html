@@ -1,0 +1,89 @@
+<div class="d-flex flex-column flex-md-row min-vh-100 bg-dark-theme">
+    <!-- Contenido Principal (Grillas de Platos, Bebidas, etc) -->
+    <div class="d-flex flex-column flex-grow-1">
+        <router-outlet></router-outlet>
+    </div>
+
+
+
+    <!-- Sidebar / Offcanvas del Carrito -->
+    <div class="offcanvas offcanvas-end glass-sidebar text-white d-flex flex-column border-0 shadow-lg" tabindex="-1" id="pedidos"
+        aria-labelledby="pedidosLabel">
+        
+        <!-- Header del Carrito -->
+        <div class="offcanvas-header justify-content-between border-bottom border-secondary border-opacity-25 py-4">
+            <h3 class="fw-bold mb-0 text-warning d-flex align-items-center">
+                <i class="fas fa-shopping-bag me-3 fs-2"></i>
+                <ng-container *ngIf="mesaActiva; else deliveryTitle">
+                    Mesa Nº {{ mesaActiva.numMesa }}
+                </ng-container>
+                <ng-template #deliveryTitle>Tu Pedido</ng-template>
+            </h3>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+
+        <!-- Cuerpo del Carrito (Items) -->
+        <div class="offcanvas-body d-flex flex-column align-items-center custom-scrollbar px-3 py-4">
+            
+            <!-- Alerta Clima -->
+            <div *ngIf="llueve && !mesaActiva" class="alert alert-info d-flex align-items-center w-100 rounded-4 mb-3 border-0 shadow-sm" style="background-color: rgba(13, 202, 240, 0.15);" role="alert">
+                <i class="fas fa-cloud-showers-heavy fs-3 me-3 text-info"></i>
+                <div class="small fw-semibold text-white">
+                    {{ climaMensaje }}
+                </div>
+            </div>
+            
+            <!-- Empty State -->
+            <div *ngIf="items.length == 0" class="text-center mt-5 text-muted">
+                <i class="fas fa-box-open fs-1 mb-3 opacity-50"></i>
+                <h5>Tu carrito está vacío</h5>
+                <p class="small">¡Agregá algo rico del menú!</p>
+            </div>
+            
+            <!-- Items del carrito -->
+            <div *ngFor="let p of items" class="card cart-item w-100 border-0 rounded-4 mb-3 position-relative overflow-hidden">
+                <div class="card-body p-3 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <span class="fw-bold fs-5 text-white">{{p.nombre}}</span>
+                        <span class="fw-bold fs-5 text-success">{{p.precio * p.cantidad | currency}}</span>
+                    </div>
+                    
+                    <!-- Controles de cantidad -->
+                    <div class="d-flex justify-content-between align-items-center">
+                        <button class="btn btn-outline-danger btn-sm rounded-circle d-flex align-items-center justify-content-center p-0" 
+                                style="width: 32px; height: 32px;" (click)="eliminarItem(p.idProducto)">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                        
+                        <div class="d-flex align-items-center bg-dark rounded-pill border border-secondary border-opacity-50 px-2 py-1">
+                            <button class="btn btn-sm text-warning fw-bold px-3 py-0 border-0 fs-5" (click)="restarItem(p.idProducto)">-</button>
+                            <span class="px-3 fw-bold text-white fs-5">{{p.cantidad}}</span>
+                            <button class="btn btn-sm text-warning fw-bold px-3 py-0 border-0 fs-5" (click)="sumarItem(p)">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer del Carrito (Totales) -->
+        <div class="offcanvas-footer py-4 px-4 border-top border-secondary border-opacity-25" style="background: rgba(0,0,0,0.3);">
+            
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0 text-white opacity-75">Subtotal</h4>
+                <h2 class="mb-0 text-success fw-bold neon-text">{{total | currency}}</h2>
+            </div>
+            
+            <button *ngIf="items.length > 0" class="btn btn-link text-danger text-decoration-none btn-sm w-100 mb-3" (click)="vaciarCarrito()">
+                <i class="fas fa-trash-alt me-2"></i> Vaciar Carrito
+            </button>
+
+            <!-- Botones de Confirmación por Método de Pago -->
+            <button class="btn btn-info btn-lg w-100 fw-bold rounded-4 shadow hover-scale mb-2" style="height: 50px; background-color: #009ee3; border-color: #009ee3; color: white;" (click)="confirmarPedido('MERCADOPAGO')">
+                <i class="fas fa-credit-card me-2"></i> Pagar con MercadoPago
+            </button>
+            <button class="btn btn-success btn-lg w-100 fw-bold rounded-4 shadow hover-scale mb-2" style="height: 50px;" (click)="confirmarPedido('EFECTIVO')">
+                <i class="fas fa-money-bill-wave me-2"></i> Efectivo / Transferencia
+            </button>
+        </div>
+    </div>
+</div>

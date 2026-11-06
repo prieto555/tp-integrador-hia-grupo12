@@ -1,0 +1,57 @@
+<!-- Encabezado de Categoría -->
+<div class="container py-4">
+    <div class="d-flex align-items-center mb-4">
+        <h2 class="text-white fw-bold m-0"><i class="fas fa-hamburger text-warning me-3"></i>Nuestros Platos</h2>
+        <div class="flex-grow-1 border-bottom border-secondary ms-4 opacity-25"></div>
+    </div>
+
+    <!-- Grilla de Productos -->
+    <div class="row g-4">
+        <div class="col-12 col-sm-6 col-lg-4 col-xl-3 d-flex" *ngFor="let p of productos">
+            <!-- Tarjeta Premium -->
+            <div class="card bg-dark text-white w-100 border-0 rounded-4 overflow-hidden shadow-lg product-card">
+                
+                <!-- Contenedor de Imagen con Gradiente -->
+                <div class="img-container position-relative">
+                    <img [src]="p.imagenUrl" class="card-img-top" alt="{{p.nombre}}">
+                    <div class="img-overlay"></div>
+                    <span class="badge bg-warning text-dark position-absolute top-0 end-0 m-3 px-3 py-2 rounded-pill fw-bold shadow-sm">
+                        Plato
+                    </span>
+                </div>
+
+                <!-- Cuerpo de la Tarjeta -->
+                <div class="card-body d-flex flex-column p-4 position-relative z-1">
+                    <h4 class="card-title fw-bold mb-2 text-truncate" [title]="p.nombre">{{p.nombre}}</h4>
+                    <p class="card-text text-muted mb-4 small flex-grow-1">{{p.descripcion || 'Sin descripción disponible.'}}</p>
+                    
+                    <!-- Precio y Botón -->
+                    <div class="d-flex justify-content-between align-items-center mt-auto pt-3 border-top border-secondary border-opacity-25">
+                        <h4 class="card-text fw-bold text-success m-0">{{p.precio | currency}}</h4>
+                        
+                        <button (click)="agregarAlCarrito(p)" 
+                            class="btn btn-warning rounded-circle d-flex align-items-center justify-content-center shadow-sm add-btn"
+                            style="width: 45px; height: 45px; transition: all 0.3s ease;">
+                            <i class="fas fa-plus fs-5 text-dark"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Loading Spinner -->
+        <div *ngIf="cargando" class="col-12 py-5 text-center">
+            <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div *ngIf="!cargando && productos.length === 0" class="col-12 py-5 text-center">
+            <div class="glass-panel p-5 rounded-4 d-inline-block">
+                <i class="fas fa-utensils text-muted mb-3" style="font-size: 3rem;"></i>
+                <h4 class="text-white">Aún no hay platos disponibles</h4>
+            </div>
+        </div>
+    </div>
+</div>

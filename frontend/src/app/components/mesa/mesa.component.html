@@ -1,0 +1,136 @@
+<div class="container-fluid py-5" style="background-color: #121212; min-height: 100vh;">
+  <div class="container">
+    
+    <!-- Encabezado y Controles -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mb-5 gap-4">
+      <div>
+        <h2 class="text-white fw-bold mb-1"><i class="fas fa-chair text-warning me-2"></i> Plano de Mesas</h2>
+        <p class="text-muted mb-0">Gestión en tiempo real del salón</p>
+      </div>
+
+      <!-- Panel de Admin Minimalista -->
+      @if (esAdmin) {
+      <div class="glass-panel d-flex align-items-center gap-3 p-3 rounded-4 shadow-lg border border-secondary border-opacity-25">
+        <div class="d-flex align-items-center text-white me-2">
+          <i class="fas fa-crown text-warning me-2"></i>
+          <span class="fw-semibold">Admin</span>
+        </div>
+        <div class="d-flex gap-2">
+          <input type="number" min="1" placeholder="Nº Mesa" [(ngModel)]="nuevaMesa.numMesa" class="form-control bg-dark text-white border-secondary rounded-3" style="width: 90px;">
+          <input type="number" min="1" placeholder="Cap." [(ngModel)]="nuevaMesa.capacidad" class="form-control bg-dark text-white border-secondary rounded-3" style="width: 90px;">
+          <button class="btn btn-warning fw-bold rounded-3 px-3 shadow-sm hover-scale" (click)="crearMesa()">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Grilla de Mesas -->
+    <div class="row g-4">
+      @if (cargando) {
+      <div class="col-12 py-5 text-center">
+          <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+              <span class="visually-hidden">Cargando...</span>
+          </div>
+      </div>
+      } @else {
+      @for (mesa of mesas; track mesa.idMesa) {
+      <div class="col-sm-6 col-md-4 col-lg-3">
+        
+        <!-- Tarjeta de Mesa -->
+        <div class="card h-100 border-0 rounded-4 overflow-hidden shadow-lg hover-lift table-card"
+             [ngClass]="{'free-table': mesa.estado === 'LIBRE', 'busy-table': mesa.estado === 'OCUPADA'}">
+          
+          <!-- Encabezado de la Tarjeta -->
+          <div class="card-header border-0 py-3 d-flex justify-content-between align-items-center">
+            <h4 class="mb-0 fw-bold text-white">Mesa {{ mesa.numMesa }}</h4>
+            <div class="status-indicator" [class.pulse-green]="mesa.estado === 'LIBRE'" [class.pulse-red]="mesa.estado === 'OCUPADA'"></div>
+          </div>
+
+          <!-- Cuerpo -->
+          <div class="card-body text-center d-flex flex-column justify-content-center py-4">
+            <i class="fas fa-users fs-1 mb-3 text-white opacity-75"></i>
+            <h5 class="text-white mb-2 fw-light">Capacidad: <span class="fw-bold">{{ mesa.capacidad }}</span></h5>
+            
+            <div class="mt-2">
+              <span class="badge rounded-pill px-4 py-2 fs-6 fw-semibold shadow-sm"
+                    [ngClass]="mesa.estado === 'LIBRE' ? 'bg-success text-white' : 'bg-danger text-white'">
+                {{ mesa.estado }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Pie y Acciones -->
+          <div class="card-footer border-0 bg-transparent p-3 d-flex flex-column gap-2">
+            
+            @if (mesa.estado === 'LIBRE') {
+              <button class="btn btn-warning btn-lg fw-bold rounded-3 shadow-sm hover-scale text-dark" (click)="atenderMesa(mesa.idMesa, mesa.numMesa)">
+                <i class="fas fa-concierge-bell me-2"></i> Tomar Pedido
+              </button>
+              <button class="btn btn-outline-light btn-sm rounded-3 hover-scale" (click)="cambiarEstado(mesa.idMesa, mesa.estado)">
+                <i class="fas fa-lock me-1"></i> Bloquear / Ocupar
+              </button>
+            } @else {
+              <button class="btn btn-info btn-lg fw-bold rounded-3 shadow-sm hover-scale text-white mb-2" (click)="verPedido(mesa.idMesa)">
+                <i class="fas fa-receipt me-2"></i> Ver Pedido
+              </button>
+              <button class="btn btn-danger fw-bold rounded-3 shadow-sm hover-scale text-white" (click)="liberarMesa(mesa.idMesa)">
+                <i class="fas fa-check-circle me-2"></i> Liberar Mesa
+              </button>
+            }
+
+            @if (esAdmin) {
+            <div class="d-flex gap-2 mt-2 w-100">
+              <button class="btn btn-dark btn-sm rounded-3 flex-grow-1 text-warning border-warning hover-scale" (click)="abrirModalEditar(mesa)" title="Editar Mesa">
+                <i class="fas fa-edit"></i> Editar
+              </button>
+              <button class="btn btn-dark btn-sm rounded-3 flex-grow-1 text-danger border-danger hover-scale" (click)="eliminarMesa(mesa.idMesa)" title="Eliminar Mesa">
+                <i class="fas fa-trash-alt"></i> Borrar
+              </button>
+            </div>
+            }
+          </div>
+          
+        </div>
+      </div>
+      } @empty {
+      <!-- Empty State -->
+      <div class="col-12 py-5">
+        <div class="text-center p-5 glass-panel rounded-4">
+          <i class="fas fa-chair text-muted fs-1 mb-3"></i>
+          <h3 class="text-white">No hay mesas configuradas</h3>
+          <p class="text-muted">Si sos administrador, podés agregar mesas desde el panel superior.</p>
+        </div>
+      </div>
+      }
+      }
+    </div>
+  </div>
+</div>
+
+<!-- Modal Formulario Editar -->
+<div class="modal fade show d-block" tabindex="-1" *ngIf="mostrarModal" style="background-color: rgba(0,0,0,0.8);">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content bg-dark border-warning rounded-4 shadow-lg">
+      <div class="modal-header border-secondary border-opacity-25">
+        <h5 class="modal-title text-warning fw-bold"><i class="fas fa-pen me-2"></i> Editar Mesa</h5>
+        <button type="button" class="btn-close btn-close-white" (click)="cerrarModal()"></button>
+      </div>
+      <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label text-light small fw-semibold text-uppercase">Nº de Mesa</label>
+            <input type="number" min="1" class="form-control bg-dark text-white border-secondary" [(ngModel)]="mesaAEditar.numMesa">
+          </div>
+          <div class="mb-4">
+            <label class="form-label text-light small fw-semibold text-uppercase">Capacidad (Personas)</label>
+            <input type="number" min="1" class="form-control bg-dark text-white border-secondary" [(ngModel)]="mesaAEditar.capacidad">
+          </div>
+          <div class="d-grid gap-2">
+            <button type="button" class="btn btn-warning fw-bold hover-scale shadow-sm" (click)="guardarMesaEditada()">Actualizar Mesa</button>
+            <button type="button" class="btn btn-outline-light hover-scale" (click)="cerrarModal()">Cancelar</button>
+          </div>
+      </div>
+    </div>
+  </div>
+</div>

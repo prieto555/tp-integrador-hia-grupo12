@@ -1,0 +1,52 @@
+.chatbot-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 2000;
+    cursor: grab;
+}
+
+.chatbot-container:active {
+    cursor: grabbing;
+}
+
+.chat-window {
+    width: 300px;
+    border-radius: 15px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.float-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    transition: all 0.3s ease;
+}
+
+/* Responsividad para móviles: Botón más pequeño y semi-transparente para no tapar los productos */
+@media (max-width: 768px) {
+    .chatbot-container {
+        bottom: 15px;
+        right: 15px;
+    }
+
+    .float-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+        opacity: 0.8;
+        /* Semi-transparente para que se vea la comida atrás */
+    }
+
+    .float-btn:active,
+    .float-btn:hover {
+        opacity: 1;
+        /* Se vuelve solido al tocarlo */
+    }
+
+    .chat-window {
+        width: 280px;
+        max-height: 400px;
+    }
+}

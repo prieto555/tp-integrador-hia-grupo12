@@ -1,0 +1,242 @@
+<div class="container-fluid py-5 min-vh-100" style="background-color: #121212;">
+  <div class="row justify-content-center">
+
+    <!-- Columna Izquierda: Detalles de la Caja -->
+    <div class="col-lg-5 col-xl-4 mb-4 mb-lg-0">
+      <!-- Encabezado -->
+      <div class="text-center mb-4">
+        <h1 class="text-white fw-bold mb-2"><i class="fas fa-cash-register text-warning me-3"></i>Terminal de Caja</h1>
+        <p class="text-muted fs-5">Control central de recaudación y cobros</p>
+      </div>
+
+      <!-- Tarjeta Caja Cerrada -->
+      @if (!cajaActiva) {
+      <div class="card bg-dark border-0 rounded-4 shadow-lg overflow-hidden glass-panel caja-cerrada">
+        <div class="card-header border-0 py-4 text-center" style="background: linear-gradient(145deg, #dc3545, #b02a37);">
+          <h3 class="text-white fw-bold mb-0"><i class="fas fa-lock me-2"></i> Caja Cerrada</h3>
+        </div>
+        <div class="card-body text-center p-4 p-sm-5">
+          <div class="mb-4">
+            <i class="fas fa-wallet text-muted opacity-50" style="font-size: 4rem;"></i>
+          </div>
+          <h4 class="text-white mb-4 fw-light">No hay ningún turno activo en este momento.</h4>
+
+          @if (esAdminOCajero) {
+          <div class="input-group mb-4 w-100 mx-auto input-group-lg shadow-sm">
+            <span class="input-group-text bg-dark text-white border-secondary border-opacity-50 fw-bold">$</span>
+            <input type="number" class="form-control bg-dark text-white border-secondary border-opacity-50 text-center fs-4 custom-input" 
+                   placeholder="Monto Inicial" [(ngModel)]="montoInicial">
+          </div>
+          <button class="btn btn-success btn-lg w-100 py-3 fw-bold shadow hover-scale rounded-3" (click)="abrirCaja()">
+            <i class="fas fa-lock-open me-2"></i> ABRIR CAJA E INICIAR TURNO
+          </button>
+          } @else {
+          <div class="alert alert-danger bg-danger bg-opacity-10 border-danger text-danger rounded-3 p-3">
+            <i class="fas fa-exclamation-triangle me-2"></i> Solo un cajero o administrador puede abrir la caja.
+          </div>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Tarjeta Caja Abierta -->
+      @else {
+      <div class="card bg-dark border-0 rounded-4 shadow-lg overflow-hidden glass-panel caja-abierta border-start border-success border-4 h-100">
+        <div class="card-header border-0 py-4 d-flex justify-content-between align-items-center bg-transparent border-bottom border-secondary border-opacity-25">
+          <h3 class="text-white fw-bold mb-0 d-flex align-items-center fs-4">
+            <div class="status-indicator pulse-green me-3"></div>
+            Caja Abierta
+          </h3>
+          <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 fs-6 rounded-pill">
+            Turno #{{ cajaActiva.idCaja }}
+          </span>
+        </div>
+        
+        <div class="card-body p-4 d-flex flex-column justify-content-between">
+          <div>
+            <!-- Metricas -->
+            <div class="row g-3 mb-4">
+              <div class="col-6">
+                <div class="p-3 bg-black bg-opacity-50 rounded-3 border border-secondary border-opacity-25 text-center h-100">
+                  <span class="text-muted small text-uppercase fw-bold letter-spacing-1" style="font-size: 0.7rem;">Monto Inicial</span>
+                  <h4 class="text-white fw-bold mt-1 mb-0">${{ cajaActiva.montoInicial }}</h4>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="p-3 bg-black bg-opacity-50 rounded-3 border border-secondary border-opacity-25 text-center h-100">
+                  <span class="text-muted small text-uppercase fw-bold letter-spacing-1" style="font-size: 0.7rem;">Pagos</span>
+                  <h4 class="text-info fw-bold mt-1 mb-0">{{ cajaActiva.pagos?.length || 0 }}</h4>
+                </div>
+              </div>
+              <div class="col-12">
+                <div class="p-3 bg-black bg-opacity-50 rounded-3 border border-secondary border-opacity-25 text-center">
+                  <span class="text-muted small text-uppercase fw-bold letter-spacing-1" style="font-size: 0.7rem;">Apertura</span>
+                  <h6 class="text-white mt-1 mb-0 fw-light">{{ cajaActiva.fechaApertura | date:'medium' }}</h6>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          @if (esAdminOCajero) {
+          <div class="d-flex flex-column gap-3 mt-auto">
+            <button class="btn btn-danger py-3 fw-bold shadow hover-scale rounded-3 w-100" (click)="cerrarCaja()">
+              <i class="fas fa-lock me-2"></i> CERRAR TURNO
+            </button>
+            
+            <div class="position-relative py-3 mt-2">
+              <hr class="border-secondary opacity-25 m-0">
+              <span class="position-absolute top-50 start-50 translate-middle bg-dark px-3 text-muted small fw-bold text-uppercase">Reportes</span>
+            </div>
+            
+            <div class="d-flex flex-column flex-sm-row justify-content-between gap-2">
+              <button class="btn btn-outline-danger flex-grow-1 fw-bold py-2 rounded-3 hover-scale bg-dark" style="font-size: 0.9rem;" (click)="descargarPDF(cajaActiva.idCaja)">
+                <i class="fas fa-file-pdf me-1"></i> Imprimir PDF
+              </button>
+              <button class="btn btn-outline-success flex-grow-1 fw-bold py-2 rounded-3 hover-scale bg-dark" style="font-size: 0.9rem;" (click)="descargarExcel(cajaActiva.idCaja)">
+                <i class="fas fa-file-excel me-1"></i> Exportar Excel
+              </button>
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Columna Derecha: Lista de Pedidos a Cobrar -->
+    @if (cajaActiva && esAdminOCajero) {
+    <div class="col-lg-7 col-xl-8">
+      <div class="card bg-dark border-0 rounded-4 shadow-lg glass-panel h-100">
+        <div class="card-header border-0 py-4 d-flex justify-content-between align-items-center bg-transparent border-bottom border-secondary border-opacity-25">
+          <h4 class="text-white fw-bold mb-0"><i class="fas fa-receipt text-warning me-2"></i> Pedidos Activos para Cobrar</h4>
+          <span class="badge bg-warning text-dark rounded-pill fs-6 px-3">{{ pedidosPendientes.length }} Pendientes</span>
+        </div>
+        
+        <div class="card-body p-4" style="max-height: 70vh; overflow-y: auto;">
+          @if (pedidosPendientes.length === 0) {
+            <div class="text-center py-5">
+              <i class="fas fa-check-circle text-muted mb-3" style="font-size: 4rem; opacity: 0.3;"></i>
+              <h5 class="text-muted fw-light">No hay pedidos pendientes de cobro en este momento.</h5>
+            </div>
+          } @else {
+            <div class="row g-3">
+              @for (pedido of pedidosPendientes; track pedido.idPedido) {
+                <div class="col-12 col-xl-6">
+                  <div class="card bg-black bg-opacity-25 border border-secondary border-opacity-50 rounded-3 hover-scale-slight h-100">
+                    <div class="card-body p-3 d-flex flex-column">
+                      <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="d-flex align-items-center">
+                          <div class="bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center fw-bold fs-5 me-3" style="width: 45px; height: 45px;">
+                            {{ pedido.mesa ? pedido.mesa.numMesa : 'D' }}
+                          </div>
+                          <div>
+                            <h5 class="text-white mb-0">{{ pedido.tipoPedido === 'LOCAL' ? 'Mesa ' + pedido.mesa?.numMesa : 'Delivery' }}</h5>
+                            <small class="text-muted">Pedido #{{ pedido.idPedido }}</small>
+                          </div>
+                        </div>
+                        <span class="badge" [ngClass]="{'bg-primary': pedido.estado === 'PENDIENTE', 'bg-info': pedido.estado === 'EN_COCINA', 'bg-success': pedido.estado === 'LISTO_PARA_ENTREGA'}">
+                          {{ pedido.estado | titlecase }}
+                        </span>
+                      </div>
+                      
+                      <div class="text-white-50 small mb-3 flex-grow-1">
+                        {{ pedido.detalles.length }} ítems consumidos
+                      </div>
+                      
+                      <div class="d-flex justify-content-between align-items-center border-top border-secondary border-opacity-25 pt-3 mt-auto">
+                        <h4 class="text-success fw-bold mb-0">${{ pedido.total }}</h4>
+                        <button class="btn btn-outline-warning rounded-pill px-4 fw-bold shadow-sm hover-scale" (click)="abrirTicket(pedido)">
+                          <i class="fas fa-cash-register me-1"></i> Cobrar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+    }
+
+  </div>
+</div>
+
+<!-- MODAL DEL TICKET (SIMULADO) -->
+@if (pedidoSeleccionado) {
+<div class="modal-backdrop fade show" style="background-color: rgba(0,0,0,0.8);"></div>
+<div class="modal fade show d-block" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 rounded-0 shadow-lg ticket-bg position-relative overflow-hidden" style="background-color: #fcfcfc;">
+      
+      <!-- Bordes dentados del ticket (Visuales) -->
+      <div class="ticket-tooth-top"></div>
+      
+      <div class="modal-body p-4 text-center" style="font-family: 'Courier New', Courier, monospace; color: #333;">
+        
+        <!-- Botón cerrar (oculto en impresión) -->
+        <button type="button" class="btn-close position-absolute top-0 end-0 m-3 shadow-none" (click)="cerrarTicket()"></button>
+
+        <!-- Logo / Encabezado -->
+        <i class="fas fa-hamburger fs-1 mb-2" style="color: #444;"></i>
+        <h3 class="fw-bold text-uppercase mb-0" style="letter-spacing: 2px;">RestoYa</h3>
+        <p class="small text-uppercase mb-3 fw-bold border-bottom border-dark pb-3 border-2" style="border-style: dashed !important;">Ticket de Venta</p>
+        
+        <!-- Info Pedido -->
+        <div class="text-start small mb-3">
+          <div><strong>Fecha:</strong> {{ pedidoSeleccionado.fechaCreacion | date:'dd/MM/yyyy HH:mm' }}</div>
+          <div><strong>Pedido:</strong> #{{ pedidoSeleccionado.idPedido }}</div>
+          <div><strong>Tipo:</strong> {{ pedidoSeleccionado.tipoPedido }}</div>
+          @if (pedidoSeleccionado.mesa) {
+            <div><strong>Mesa:</strong> {{ pedidoSeleccionado.mesa.numMesa }}</div>
+          }
+        </div>
+
+        <div class="border-top border-dark border-2 border-dashed my-2" style="border-style: dashed !important;"></div>
+
+        <!-- Detalles -->
+        <div class="text-start w-100 my-3">
+          <table class="w-100 small">
+            <thead>
+              <tr class="fw-bold border-bottom border-dark border-dashed" style="border-style: dashed !important;">
+                <th class="pb-1">Cant</th>
+                <th class="pb-1">Descripción</th>
+                <th class="text-end pb-1">Subt</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (det of pedidoSeleccionado.detalles; track det.idDetallePedido) {
+                <tr>
+                  <td class="pt-2">{{ det.cantidad }}</td>
+                  <td class="pt-2">{{ det.producto?.nombre || 'Item' | slice:0:15 }}</td>
+                  <td class="text-end pt-2">${{ det.cantidad * det.precioUnitario }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="border-top border-dark border-2 border-dashed my-2" style="border-style: dashed !important;"></div>
+
+        <!-- Total -->
+        <div class="d-flex justify-content-between align-items-center mt-3 mb-4">
+          <span class="fs-5 fw-bold text-uppercase">Total</span>
+          <span class="fs-4 fw-bold">${{ totalPedidoSeleccionado }}</span>
+        </div>
+
+        <p class="small fw-bold mb-4">¡Gracias por su visita!</p>
+
+        <!-- Botón Cobrar (oculto si fuera impresión real, pero funcional acá) -->
+        <button class="btn btn-dark w-100 fw-bold py-3 text-uppercase rounded-0 shadow-lg ticket-btn pulse-btn" (click)="confirmarCobroEfectivo()">
+          <i class="fas fa-hand-holding-usd me-2"></i> Confirmar Pago Efectivo
+        </button>
+
+      </div>
+      
+      <!-- Bordes dentados inferiores -->
+      <div class="ticket-tooth-bottom"></div>
+    </div>
+  </div>
+</div>
+}

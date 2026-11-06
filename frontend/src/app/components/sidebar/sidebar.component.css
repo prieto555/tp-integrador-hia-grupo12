@@ -1,0 +1,16 @@
+.sidebar{
+    width: 100px;
+}
+.items-container button {
+   font-size: 15px;
+   font-weight: 700;
+   text-shadow: 1px 1px 2px rgb(0, 0, 0);
+   transition: 0.3s ease;
+}
+.items-container button:hover {
+    text-shadow: 2px 2px 2px rgb(0, 0, 0);
+    transform: scale(1.1);
+}
+#sidebar{
+    width: 100px;
+}

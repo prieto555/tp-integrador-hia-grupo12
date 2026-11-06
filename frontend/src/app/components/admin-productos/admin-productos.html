@@ -1,0 +1,156 @@
+<div class="container mt-4 mb-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-utensils text-warning me-2"></i> Gestión de Menú</h2>
+    <button class="btn btn-warning fw-bold" (click)="abrirModalNuevo()">
+      <i class="fas fa-plus me-1"></i> Nuevo Producto
+    </button>
+  </div>
+
+  <div class="card shadow-sm border-0 bg-dark text-white">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 align-middle">
+          <thead>
+            <tr>
+              <th scope="col" class="ps-4">Producto</th>
+              <th scope="col">Categoría</th>
+              <th scope="col">Costo</th>
+              <th scope="col">Margen</th>
+              <th scope="col">Precio Venta</th>
+              <th scope="col" class="text-end pe-4">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngIf="cargando">
+              <td colspan="6" class="text-center py-5">
+                <div class="spinner-border text-warning" role="status">
+                  <span class="visually-hidden">Cargando...</span>
+                </div>
+              </td>
+            </tr>
+            <ng-container *ngIf="!cargando">
+              <tr *ngFor="let p of paginatedProductos">
+                <td class="ps-4">
+                  <div class="d-flex align-items-center">
+                    <img [src]="p.imagenUrl" alt="img" class="rounded me-3" style="width: 40px; height: 40px; object-fit: cover;">
+                    <div>
+                      <h6 class="mb-0">{{p.nombre}}</h6>
+                      <small class="text-muted text-truncate d-inline-block" style="max-width: 200px;">{{p.descripcion}}</small>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge fw-bold shadow-sm text-uppercase px-3 py-2"
+                        [ngClass]="{
+                          'bg-warning text-dark': p.categoria === 'plato_principal',
+                          'bg-primary text-white': p.categoria === 'bebida',
+                          'bg-danger text-white': p.categoria === 'postre',
+                          'bg-secondary': p.categoria !== 'plato_principal' && p.categoria !== 'bebida' && p.categoria !== 'postre'
+                        }">
+                    {{ p.categoria ? p.categoria.replace('_', ' ') : 'Desconocido' }}
+                  </span>
+                </td>
+                <td class="fw-medium">{{p.precioCosto | currency}}</td>
+                <td>{{p.porcentajeGanancia}}%</td>
+                <td class="fw-bold text-success">{{p.precio | currency}}</td>
+                <td class="text-end pe-4">
+                  <button class="btn btn-sm btn-outline-light me-2" (click)="abrirModalEditar(p)">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger" (click)="eliminarProducto(p.idProducto)">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              <tr *ngIf="productos.length === 0">
+                <td colspan="6" class="text-center py-4 text-muted">No hay productos en el menú</td>
+              </tr>
+            </ng-container>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Paginación -->
+      <div class="card-footer bg-dark border-top border-secondary py-3 d-flex justify-content-between align-items-center px-4" *ngIf="productos.length > 0">
+        <span class="text-muted small">Página {{ currentPage }} de {{ totalPages }}</span>
+        <div class="btn-group">
+          <button class="btn btn-outline-warning btn-sm" [disabled]="currentPage === 1" (click)="prevPage()">
+            <i class="fas fa-chevron-left me-1"></i> Anterior
+          </button>
+          <button class="btn btn-outline-warning btn-sm" [disabled]="currentPage === totalPages" (click)="nextPage()">
+            Siguiente <i class="fas fa-chevron-right ms-1"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Formulario -->
+<div class="modal fade show d-block" tabindex="-1" *ngIf="mostrarModal" style="background-color: rgba(0,0,0,0.8);">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark border-warning">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title text-warning">
+          {{ modoEdicion ? 'Editar Producto' : 'Nuevo Producto' }}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" (click)="cerrarModal()"></button>
+      </div>
+      
+      <div class="modal-body">
+        <form [formGroup]="productoForm" (ngSubmit)="guardarProducto()">
+          <div class="mb-3">
+            <label class="form-label text-light">Nombre</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" formControlName="nombre">
+          </div>
+          
+          <div class="mb-3">
+            <label class="form-label text-light">Descripción</label>
+            <textarea class="form-control bg-dark text-white border-secondary" formControlName="descripcion" rows="2"></textarea>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-light">Categoría</label>
+              <select class="form-select bg-dark text-white border-secondary" formControlName="categoria">
+                <option value="plato_principal">Plato Principal</option>
+                <option value="postre">Postre</option>
+                <option value="bebida">Bebida</option>
+              </select>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-light">Precio Costo ($)</label>
+              <input type="number" class="form-control bg-dark text-white border-secondary" formControlName="precioCosto">
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-light">Margen Ganancia (%)</label>
+              <input type="number" class="form-control bg-dark text-white border-secondary" formControlName="porcentajeGanancia">
+            </div>
+            
+            <div class="col-md-6 mb-3">
+              <label class="form-label text-muted">Precio Venta (Calculado)</label>
+              <input type="text" class="form-control bg-secondary text-white border-0" disabled 
+                [value]="productoForm.value.precioCosto * (1 + productoForm.value.porcentajeGanancia / 100)">
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label text-light">URL de la Imagen</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" formControlName="imagenUrl" placeholder="https://...">
+          </div>
+
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-warning fw-bold" [disabled]="productoForm.invalid">
+              {{ modoEdicion ? 'Actualizar Producto' : 'Crear Producto' }}
+            </button>
+            <button type="button" class="btn btn-outline-light" (click)="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

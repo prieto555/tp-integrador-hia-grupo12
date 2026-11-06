@@ -1,0 +1,87 @@
+<div class="offcanvas offcanvas-start text-bg-dark" tabindex="-1" id="sidebar" aria-labelledby="sidebarLabel">
+    <!-- Cuerpo con scroll automático -->
+    <div class="offcanvas-body p-0 py-3 d-flex flex-column custom-scrollbar">
+        <!-- items del side bar  -->
+        <!-- ======================= -->
+        <div class="items-container d-flex flex-column align-items-center gap-4 w-100 pb-5">
+            
+            <!-- Solo Gerente y Mozo -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Mozo')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['home']" routerLinkActive="active">
+                <!-- iconos usados de google -->
+                <span class="material-symbols-outlined">home</span>
+                <span class="text-white">Inicio</span>
+            </button>
+
+            <!-- Solo Gerente -->
+            <button *ngIf="authService.tieneRol('Gerente')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['usuario']" routerLinkActive="active">
+                <span class="material-symbols-outlined">manage_accounts</span>
+                <span class="text-white">Usuarios</span>
+            </button>
+
+            <!-- Solo Gerente -->
+            <button *ngIf="authService.tieneRol('Gerente')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['/admin/productos']" routerLinkActive="active">
+                <span class="material-symbols-outlined">inventory</span>
+                <span class="text-white">Menú</span>
+            </button>
+
+            <!-- Solo Gerente -->
+            <button *ngIf="authService.tieneRol('Gerente')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['/admin/historial']" routerLinkActive="active">
+                <span class="material-symbols-outlined">history</span>
+                <span class="text-white">Historial</span>
+            </button>
+
+            <!-- Solo Gerente -->
+            <button *ngIf="authService.tieneRol('Gerente')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['dashboard']" routerLinkActive="active">
+                <span class="material-symbols-outlined">monitoring</span>
+                <span class="text-white">Dashboard</span>
+            </button>
+
+            <!-- Gerente y Mozo -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Mozo')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['mesa']" routerLinkActive="active">
+                <span class="material-symbols-outlined">table_bar</span>
+                <span class="text-white">Mesa</span>
+            </button>
+
+            <!-- Gerente y Mozo -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Mozo')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['platos']" routerLinkActive="active">
+                <span class="material-symbols-outlined">lunch_dining</span>
+                <span class="text-white">Platos</span>
+            </button>
+
+            <!-- Gerente y Cocina -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Cocina')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['cocina']" routerLinkActive="active">
+                <span class="material-symbols-outlined">restaurant</span>
+                <span class="text-white">Cocina</span>
+            </button>
+
+            <!-- Gerente y Mozo -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Mozo')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['bebidas']" routerLinkActive="active">
+                <span class="material-symbols-outlined">local_bar</span>
+                <span class="text-white">Bebidas</span>
+            </button>
+
+            <!-- Gerente y Mozo -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Mozo')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['postres']" routerLinkActive="active">
+                <span class="material-symbols-outlined">icecream</span>
+                <span class="text-white">Postres</span>
+            </button>
+
+            <!-- Gerente y Cajero -->
+            <button *ngIf="authService.tieneRol('Gerente') || authService.tieneRol('Cajero')" class="btn btn-link text-decoration-none text-white-50 d-flex flex-column align-items-center w-100 py-2"
+                type="button" [routerLink]="['caja']" routerLinkActive="active">
+                <span class="material-symbols-outlined">point_of_sale</span>
+                <span class="text-white">Caja</span>
+            </button>
+
+    </div>
+</div>

@@ -1,0 +1,80 @@
+<div class="container-fluid py-4 min-vh-100" style="background-color: #121212;">
+  <!-- Encabezado -->
+  <div class="d-flex align-items-center mb-4">
+    <h2 class="text-white fw-bold m-0"><i class="fas fa-fire text-warning me-3"></i>Centro de Cocina</h2>
+    <div class="flex-grow-1 border-bottom border-secondary ms-4 opacity-25"></div>
+  </div>
+
+  <!-- Tablero de Comandas -->
+  <div class="row g-4 align-items-start">
+    @for (c of comandas; track c.idPedido) {
+      <div class="col-12 col-md-6 col-lg-4 col-xl-3">
+        <!-- Comanda Card -->
+        <div class="card bg-dark text-white border-0 rounded-4 shadow-lg h-100 ticket-card"
+             [ngClass]="{'border-start border-warning border-4': c.estado === 'PENDIENTE', 'border-start border-info border-4': c.estado === 'EN_COCINA'}">
+          
+          <!-- Header de la Comanda -->
+          <div class="card-header border-bottom border-secondary border-opacity-50 py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold">
+              @if (c.tipoPedido === 'DELIVERY') { 
+                <i class="fas fa-motorcycle text-info me-2"></i> DELIVERY 
+              } @else { 
+                <i class="fas fa-chair text-warning me-2"></i> MESA {{ c.mesa?.numMesa || 'S/N' }} 
+              }
+            </h5>
+            <span class="badge bg-secondary text-light fs-6">#{{ c.idPedido }}</span>
+          </div>
+
+          <!-- Cuerpo (Detalle del Pedido) -->
+          <div class="card-body py-4">
+            <ul class="list-unstyled mb-0 custom-list">
+              @for (det of c.detalles; track det.idDetalle) {
+                @if (det.producto.categoria !== 'bebida') {
+                  <li class="d-flex align-items-center mb-3">
+                    <span class="badge rounded-circle bg-light text-dark fw-bold d-flex justify-content-center align-items-center me-3" style="width: 30px; height: 30px; font-size: 1rem;">
+                      {{ det.cantidad }}
+                    </span>
+                    <span class="fs-5">{{ det.producto.nombre }}</span>
+                  </li>
+                }
+              }
+            </ul>
+          </div>
+
+          <!-- Footer (Estado y Botones) -->
+          <div class="card-footer border-top border-secondary border-opacity-50 p-3 bg-transparent text-center">
+            
+            <div class="mb-3 d-flex justify-content-between align-items-center px-2">
+              <span class="text-muted small">Estado:</span>
+              <span class="badge rounded-pill px-3 py-2 fw-semibold" 
+                    [ngClass]="c.estado === 'PENDIENTE' ? 'bg-danger' : 'bg-info text-dark'">
+                {{ c.estado | estadoPedido }}
+              </span>
+            </div>
+
+            <!-- Botones de Acción -->
+            @if (c.estado !== 'EN_COCINA' && c.estado !== 'LISTO_PARA_ENTREGA') {
+              <button class="btn btn-warning w-100 fw-bold hover-scale shadow-sm py-2 rounded-3 text-dark" (click)="cambiarEstado(c.idPedido, 'EN_COCINA')">
+                <i class="fas fa-fire-burner me-2"></i> Comenzar a Cocinar
+              </button>
+            }
+            @if (c.estado === 'EN_COCINA') {
+              <button class="btn btn-success w-100 fw-bold hover-scale shadow-sm py-2 rounded-3" (click)="cambiarEstado(c.idPedido, 'LISTO_PARA_ENTREGA')">
+                <i class="fas fa-bell me-2"></i> ¡Listo para Entregar!
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+    } @empty {
+      <!-- Empty State -->
+      <div class="col-12 py-5 mt-4">
+        <div class="text-center p-5 glass-panel rounded-4 mx-auto" style="max-width: 500px;">
+          <i class="fas fa-check-double text-success fs-1 mb-3"></i>
+          <h4 class="text-white">¡La cocina está al día!</h4>
+          <p class="text-muted">No hay comandas pendientes de preparación.</p>
+        </div>
+      </div>
+    }
+  </div>
+</div>

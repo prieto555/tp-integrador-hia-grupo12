@@ -1,0 +1,63 @@
+.login-container {
+  background: linear-gradient(135deg, #121212 0%, #1a1a1a 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-container::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 193, 7, 0.05) 0%, transparent 60%);
+  animation: rotate 30s linear infinite;
+}
+
+@keyframes rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.glass-panel {
+  background: rgba(30, 30, 30, 0.6) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.5) !important;
+  position: relative;
+  z-index: 1;
+}
+
+.icon-container {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.custom-input:focus {
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.25);
+  border-color: #ffc107 !important;
+}
+
+.hover-scale {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-scale:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(255, 193, 7, 0.3) !important;
+}
+
+.hover-scale:active {
+  transform: translateY(1px);
+}
+
+.letter-spacing-1 {
+  letter-spacing: 1px;
+}
