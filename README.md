@@ -97,27 +97,32 @@ muertas, sin un solo commit propio.
 
 Nadie commitea directo a `main`.
 
-## Pendiente de administración
+## Administración del repositorio
 
-Tres pasos que sólo puede dar quien es dueño del repositorio, en este orden:
+El repositorio es público y `main` está protegida: exige pull request con una
+aprobación y bloquea el borrado y el *force push*. La configuración está
+versionada en `.github/ruleset-main.json`, así que se puede volver a aplicar con:
 
-1. **Hacerlo público.** La consigna lo exige ("repositorio remoto público, sin
-   secretos ni datos personales reales") y además destraba el punto 2, que en
-   repositorios privados es de pago.
-2. **Proteger `main`.** La configuración está versionada en
-   `.github/ruleset-main.json`: exige pull request con una aprobación, y bloquea
-   el borrado y el *force push*.
+```bash
+gh api -X POST repos/prieto555/tp-integrador-hia-grupo13/rulesets --input .github/ruleset-main.json
+```
 
-   ```bash
-   gh api -X POST repos/prieto555/tp-integrador-hia-grupo13/rulesets --input .github/ruleset-main.json
-   ```
+Se comprobó intentando un push directo a `main`:
 
-3. **Agregar a los cuatro integrantes** como colaboradores con permiso de
-   escritura, en *Settings → Collaborators*.
+```
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Changes must be made through a pull request.
+ ! [remote rejected] main -> main (push declined due to repository rule violations)
+```
 
-Ojo con el orden: una vez aplicada la regla, nadie puede aprobar su propio pull
-request. Si hace falta integrar algo a `main` antes de que estén los demás, hay
-que desactivar el *ruleset* un rato.
+### Lo que falta
+
+**Agregar a los otros cuatro integrantes** como colaboradores con permiso de
+escritura, en *Settings → Collaborators*.
+
+Una consecuencia de la regla: nadie puede aprobar su propio pull request. Hasta
+que estén todos cargados no hay forma de integrar nada a `main` sin desactivar
+el *ruleset* un rato.
 
 ## Reglas que no se negocian
 
