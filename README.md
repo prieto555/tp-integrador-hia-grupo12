@@ -97,6 +97,28 @@ muertas, sin un solo commit propio.
 
 Nadie commitea directo a `main`.
 
+## Pendiente de administración
+
+Tres pasos que sólo puede dar quien es dueño del repositorio, en este orden:
+
+1. **Hacerlo público.** La consigna lo exige ("repositorio remoto público, sin
+   secretos ni datos personales reales") y además destraba el punto 2, que en
+   repositorios privados es de pago.
+2. **Proteger `main`.** La configuración está versionada en
+   `.github/ruleset-main.json`: exige pull request con una aprobación, y bloquea
+   el borrado y el *force push*.
+
+   ```bash
+   gh api -X POST repos/prieto555/tp-integrador-hia-grupo13/rulesets --input .github/ruleset-main.json
+   ```
+
+3. **Agregar a los cuatro integrantes** como colaboradores con permiso de
+   escritura, en *Settings → Collaborators*.
+
+Ojo con el orden: una vez aplicada la regla, nadie puede aprobar su propio pull
+request. Si hace falta integrar algo a `main` antes de que estén los demás, hay
+que desactivar el *ruleset* un rato.
+
 ## Reglas que no se negocian
 
 - **Ningún secreto al repositorio.** Ni `.env`, ni tokens, ni claves. Las
