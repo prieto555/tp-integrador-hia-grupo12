@@ -168,6 +168,31 @@ El servicio `restoya_backup` hace esto solo cada hora, verifica cada copia y
 rota dejando las siete más nuevas. La bitácora queda en
 `infra/compose/backups/backups.log`.
 
+### Prueba de restauración
+
+Una copia que nunca se restauró no sirve de nada. Se restauró sobre una base
+nueva y vacía, no sobre la original:
+
+```bash
+docker exec restoya_db psql -U restoya -d postgres -c "CREATE DATABASE prueba_restauracion;"
+docker exec restoya_backup pg_restore -d prueba_restauracion -j 4 /backups/medicion-6M.dump
+```
+
+| Medición | Resultado |
+|---|---|
+| Tiempo de restauración | **75 s** (con `-j 4`, cuatro procesos en paralelo) |
+| `usuarios` | 6.000.001 ✓ |
+| `pedidos` | 6.000.000 ✓ |
+| `detalle_pedidos` | 6.000.000 ✓ |
+| `pagos` | 6.000.000 ✓ |
+| `historial_accesos` | 6.000.000 ✓ |
+
+Los cinco conteos coinciden exactamente con el origen. La restauración es más
+rápida que la copia (75 s contra 201 s) porque `pg_restore -j 4` paraleliza la
+carga de tablas e índices, mientras que `pg_dump` comprime en un solo proceso.
+
+La base de prueba se eliminó después de verificar.
+
 ## Hallazgo: el arranque del backend degrada la base
 
 Al levantar el backend contra las tablas ya cargadas, tardó **45 segundos**
