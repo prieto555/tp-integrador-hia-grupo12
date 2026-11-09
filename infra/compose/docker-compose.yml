@@ -1,0 +1,105 @@
+name: restoya
+
+# Stack de datos del TP Integrador. Por ahora cubre el punto 4: base de datos,
+# cliente de administracion y backups. El backend y el frontend se suman en el
+# punto 7, sobre esta misma red.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: restoya_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # Acelera la carga masiva del dataset. Es seguro en un entorno de
+      # pruebas: si el contenedor se cae a mitad de una escritura se puede
+      # perder la ultima transaccion. No usar asi en produccion.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - max_wal_size=4GB
+      # Deja registrada toda consulta que tarde mas de 500 ms. Es la fuente
+      # del analisis del punto 5.
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    ports:
+      # Atado a loopback a proposito: la base no se expone a la red.
+      - "127.0.0.1:${DB_PORT_HOST:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - interna
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4:9.8
+    container_name: restoya_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_DISABLE_POSTFIX: "True"
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:16-alpine
+    container_name: restoya_backup
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      INTERVALO_SEGUNDOS: ${BACKUP_INTERVALO:-3600}
+      RETENER: ${BACKUP_RETENER:-7}
+    volumes:
+      - ./backups:/backups
+      - ../postgres/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+networks:
+  interna:
+    name: restoya_interna
+    driver: bridge
+
+volumes:
+  # Volumen creado antes de existir este compose. Se declara externo para no
+  # perder los datos que ya tenia.
+  pgdata:
+    external: true
+    name: restoya_pgdata
+  pgadmin_data:
+    name: restoya_pgadmin_data
