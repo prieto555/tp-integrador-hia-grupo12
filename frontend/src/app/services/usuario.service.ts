@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
@@ -6,7 +7,7 @@ import { Observable } from 'rxjs';
   providedIn: 'root',
 })
 export class UsuarioService {
-  urlApi: string = "https://proybackendgrupo13-9bp9.onrender.com/api/usuarios/";
+  urlApi: string = environment.apiUrl + "/usuarios/";
 
   constructor(private http: HttpClient) { }
 

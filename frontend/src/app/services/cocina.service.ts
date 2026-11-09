@@ -1,10 +1,11 @@
+import { environment } from '../../environments/environment';
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class CocinaService {
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/cocina';
+  private apiUrl = environment.apiUrl + '/cocina';
 
   constructor(private http: HttpClient) { }
 

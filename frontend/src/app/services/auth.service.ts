@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
@@ -6,7 +7,7 @@ import { BehaviorSubject, Observable, tap } from 'rxjs';
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/auth';
+  private apiUrl = environment.apiUrl + '/auth';
   
   // Guardamos el estado del usuario para que los componentes se enteren si hay sesión
   private usuarioSubject = new BehaviorSubject<any>(this.getUsuarioDesdeStorage());

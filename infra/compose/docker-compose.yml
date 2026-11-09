@@ -93,6 +93,58 @@ services:
       db:
         condition: service_healthy
 
+  # --- Aplicacion (punto 7) ---------------------------------------------
+  # Se definen aparte para que queden claros los dos perfiles: el stack de
+  # datos solo (db, pgadmin, backup) sirve para desarrollar con el backend
+  # fuera del contenedor; con "--profile app" corre todo adentro.
+
+  backend:
+    profiles: ["app"]
+    build:
+      context: ../../backend
+    image: restoya-backend:local
+    container_name: restoya_backend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # El host es el nombre del servicio: se habla por la red interna.
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DIALECT: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_PASS: ${GMAIL_PASS:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    # Sin "ports": el backend no se expone al host. Solo lo alcanza nginx
+    # por la red interna. Es el punto 9.5 cumplido por diseno.
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ../../frontend
+    image: restoya-frontend:local
+    container_name: restoya_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    networks:
+      - interna
+    depends_on:
+      - backend
+
 networks:
   interna:
     name: restoya_interna
@@ -106,3 +158,4 @@ volumes:
     name: restoya_pgdata
   pgadmin_data:
     name: restoya_pgadmin_data
+
