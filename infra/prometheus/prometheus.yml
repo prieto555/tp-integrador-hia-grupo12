@@ -58,9 +58,18 @@ scrape_configs:
   # PostgreSQL: conexiones, transacciones, tamano de la base, bloqueos y
   # aciertos de cache.
   # -------------------------------------------------------------------------
+  # Dos destinos, uno por nodo, con la etiqueta "nodo" para poder separarlos
+  # en el tablero. El de la replica vive en el perfil "replica": si ese perfil
+  # no esta levantado, Prometheus lo muestra caido, que es justo lo que
+  # queremos que diga.
   - job_name: postgres
     static_configs:
       - targets: ["postgres-exporter:9187"]
+        labels:
+          nodo: primario
+      - targets: ["postgres-exporter-replica:9187"]
+        labels:
+          nodo: replica
 
   # -------------------------------------------------------------------------
   # La aplicacion. El backend expone /metrics con prom-client: duracion de

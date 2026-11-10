@@ -105,6 +105,28 @@ services:
       # a mitad de la copia y vuelve a empezar para siempre.
       start_period: 600s
 
+  # ---------------------------------------------------------------------------
+  # Exportador de la replica (punto 10, tarea E10-04). Sin esto el panel de
+  # replicacion siempre decia 0: Prometheus solo consultaba al primario, que
+  # por definicion responde pg_replication_is_replica = 0.
+  #
+  # Perfil "replica" porque sin replica no tiene a quien consultar.
+  # ---------------------------------------------------------------------------
+  postgres-exporter-replica:
+    profiles: ["replica"]
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: restoya_postgres_exporter_replica
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: "db-replica:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_USER: ${DB_USER}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+      PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1"
+    networks:
+      - interna
+    depends_on:
+      - db-replica
+
   pgadmin:
     image: dpage/pgadmin4:9.8
     container_name: restoya_pgadmin
@@ -169,6 +191,11 @@ services:
       # El host es el nombre del servicio: se habla por la red interna.
       DB_HOST: db
       DB_PORT: 5432
+      # Lecturas historicas del tablero contra la replica (punto 6). Si el
+      # perfil "replica" no esta levantado, el nombre no resuelve y la
+      # aplicacion cae sola al primario: no hace falta tocar nada.
+      DB_REPLICA_HOST: ${DB_REPLICA_HOST:-db-replica}
+      DB_REPLICA_PORT: 5432
       DB_DIALECT: postgres
       # El arranque no toca el esquema. Ver docs/07-optimizacion-sql.md:
       # sync({alter:true}) recreaba las claves foraneas en cada arranque.
@@ -378,9 +405,224 @@ services:
     depends_on:
       - prometheus
 
+
+  # ===========================================================================
+  # PUNTO 11 — Gestion de incidencias con MantisBT.
+  #
+  #   docker compose --profile incidencias up -d
+  #
+  # Por que MariaDB y no el PostgreSQL que ya esta: a proposito. Mantis es la
+  # herramienta donde se anotan los problemas DE la aplicacion. Si compartiera
+  # el motor con la aplicacion, un problema de ese motor se llevaria puesto el
+  # lugar donde hay que anotarlo. Volumen propio, red propia, motor propio.
+  # ===========================================================================
+  mantis-db:
+    profiles: ["incidencias"]
+    image: mariadb:11.4
+    container_name: restoya_mantis_db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MANTIS_DB_ROOT_PASSWORD:?falta MANTIS_DB_ROOT_PASSWORD en el .env}
+      MARIADB_DATABASE: incidencias
+      MARIADB_USER: mantis
+      MARIADB_PASSWORD: ${MANTIS_DB_PASSWORD:?falta MANTIS_DB_PASSWORD en el .env}
+    volumes:
+      - mantis_db:/var/lib/mysql
+    networks:
+      - incidencias
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mantis:
+    profiles: ["incidencias"]
+    image: xlrl/mantisbt:2.28.4
+    container_name: restoya_mantis
+    restart: unless-stopped
+    environment:
+      MANTIS_DB_PASSWORD: ${MANTIS_DB_PASSWORD}
+      MANTIS_SALT: ${MANTIS_SALT:?falta MANTIS_SALT en el .env}
+      MANTIS_URL: http://localhost:${MANTIS_PORT:-8089}/
+      MANTIS_ENABLE_ADMIN: 0
+      MANTIS_TIMEZONE: America/Argentina/Jujuy
+    volumes:
+      # La configuracion sale del repositorio. Si viviera solo adentro del
+      # contenedor, nadie mas podria reproducir esta instalacion.
+      - ../incidencias/config_inc.php:/var/www/html/config/config_inc.php:ro
+    ports:
+      - "127.0.0.1:${MANTIS_PORT:-8089}:80"
+    networks:
+      - incidencias
+    depends_on:
+      mantis-db:
+        condition: service_healthy
+
+  mantis-mail:
+    profiles: ["incidencias"]
+    image: axllent/mailpit:v1.21
+    container_name: restoya_mantis_mail
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+    ports:
+      # Solo la interfaz web del buzon. El puerto 1025 (SMTP) queda en la red
+      # interna: un SMTP abierto al host es un relay de correo esperando que
+      # alguien lo encuentre.
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    networks:
+      - incidencias
+
+  # ===========================================================================
+  # PUNTO 12 — Gestion documental con Nextcloud.
+  #
+  #   docker compose --profile documental up -d
+  #
+  # Base propia por la misma razon que Mantis. Redis no es decorativo: sin el,
+  # Nextcloud usa bloqueo de archivos sobre la base y con dos personas
+  # subiendo a la vez tira "file is locked".
+  # ===========================================================================
+  nextcloud-db:
+    profiles: ["documental"]
+    image: postgres:16-alpine
+    container_name: restoya_nextcloud_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?falta NEXTCLOUD_DB_PASSWORD en el .env}
+    volumes:
+      - nextcloud_db:/var/lib/postgresql/data
+    networks:
+      - documental
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud -d nextcloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nextcloud-redis:
+    profiles: ["documental"]
+    image: redis:7-alpine
+    container_name: restoya_nextcloud_redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - documental
+
+  nextcloud:
+    profiles: ["documental"]
+    image: nextcloud:30-apache
+    container_name: restoya_nextcloud
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: nextcloud-db
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      REDIS_HOST: nextcloud-redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?falta NEXTCLOUD_ADMIN_PASSWORD en el .env}
+      # Sin esto Nextcloud responde "Access through untrusted domain" y no
+      # sirve ni la pantalla de inicio.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
+      OVERWRITEPROTOCOL: http
+    volumes:
+      - nextcloud_datos:/var/www/html
+    ports:
+      - "127.0.0.1:${NEXTCLOUD_PORT:-8081}:80"
+    networks:
+      - documental
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+
+  # ===========================================================================
+  # PUNTO 13 — Automatizacion con n8n.
+  #
+  #   docker compose --profile automatizacion up -d
+  #
+  # n8n se conecta a casi todo lo demas, asi que esta en las tres redes. Es el
+  # servicio con mas alcance del proyecto y por eso el que mas importa tener
+  # cerrado: no publica puerto fuera de 127.0.0.1 y exige usuario y clave.
+  # ===========================================================================
+  n8n-db:
+    profiles: ["automatizacion"]
+    image: postgres:16-alpine
+    container_name: restoya_n8n_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD:?falta N8N_DB_PASSWORD en el .env}
+    volumes:
+      - n8n_db:/var/lib/postgresql/data
+    networks:
+      - automatizacion
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    profiles: ["automatizacion"]
+    image: n8nio/n8n:1.70.1
+    container_name: restoya_n8n
+    restart: unless-stopped
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-db
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+      # La interfaz de administracion pide usuario y clave (requisito de
+      # seguridad del punto 13).
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?falta N8N_PASSWORD en el .env}
+      # Clave con la que n8n cifra las credenciales guardadas. Si cambia, las
+      # credenciales existentes dejan de poder descifrarse: por eso va al .env
+      # y no se genera al vuelo en cada arranque.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?falta N8N_ENCRYPTION_KEY en el .env}
+      GENERIC_TIMEZONE: America/Argentina/Jujuy
+      TZ: America/Argentina/Jujuy
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      WEBHOOK_URL: http://localhost:${N8N_PORT:-5678}/
+    volumes:
+      - n8n_datos:/home/node/.n8n
+      # Los scripts que los flujos ejecutan en el host (copias, verificacion).
+      - ../automatizacion/scripts:/scripts:ro
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    networks:
+      - automatizacion
+      - interna
+      - incidencias
+      - documental
+    depends_on:
+      n8n-db:
+        condition: service_healthy
+
 networks:
   interna:
     name: restoya_interna
+    driver: bridge
+  # Una red por herramienta. Mantis no tiene por que poder hablarle a la base
+  # de la aplicacion, ni Nextcloud a Mantis. El unico que cruza es n8n, que
+  # para eso esta.
+  incidencias:
+    name: restoya_incidencias
+    driver: bridge
+  documental:
+    name: restoya_documental
+    driver: bridge
+  automatizacion:
+    name: restoya_automatizacion
     driver: bridge
 
 volumes:
@@ -399,4 +641,14 @@ volumes:
     name: restoya_alertmanager_data
   grafana_data:
     name: restoya_grafana_data
+  mantis_db:
+    name: restoya_mantis_db
+  nextcloud_db:
+    name: restoya_nextcloud_db
+  nextcloud_datos:
+    name: restoya_nextcloud_datos
+  n8n_db:
+    name: restoya_n8n_db
+  n8n_datos:
+    name: restoya_n8n_datos
 

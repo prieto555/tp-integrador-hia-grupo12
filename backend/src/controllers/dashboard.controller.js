@@ -1,5 +1,8 @@
 const { Op, QueryTypes } = require("sequelize");
-const sequelize = require("../../config/database");
+// Las cuatro consultas a vistas materializadas de este archivo van a la
+// replica (punto 6). Son historicas: ya muestran datos del ultimo refresco,
+// asi que el retraso de la replicacion no agrega ningun error nuevo.
+const { consultar } = require("../../config/database-lectura");
 const Pedido = require("../models/pedido.model");
 const Pago = require("../models/pago.model");
 const Mesa = require("../models/mesa.model");
@@ -26,7 +29,7 @@ const obtenerResumen = async (req, res) => {
             //      mv_resumen_historico. 1,4 ms.
             //
             // Las otras tres cifras siguen en vivo a proposito: son las de hoy.
-            sequelize.query(
+            consultar(
                 'SELECT ticket_promedio FROM mv_resumen_historico WHERE id = 1',
                 { type: QueryTypes.SELECT, plain: true }
             )
@@ -58,7 +61,7 @@ const ventasPorDia = async (req, res) => {
         // El costo es que los numeros son los del ultimo refresco; para las
         // ventas del dia de hoy, que si tienen que estar al segundo, el
         // dashboard sigue consultando la tabla (ver obtenerResumen).
-        const resultado = await sequelize.query(
+        const resultado = await consultar(
             `SELECT fecha, total
                FROM mv_ventas_por_dia
               WHERE fecha >= :desde
@@ -78,7 +81,7 @@ const ventasPorMetodoPago = async (req, res) => {
         // Era la segunda consulta mas cara del sistema: un GROUP BY sobre los
         // seis millones de pagos, sin ningun filtro, cada vez que alguien
         // abria el dashboard. 553 ms. Ahora sale de la vista: 2 ms.
-        const resultado = await sequelize.query(
+        const resultado = await consultar(
             `SELECT "metodoPago", total
                FROM mv_ventas_por_metodo
               ORDER BY total DESC`,
@@ -101,7 +104,7 @@ const productosMasVendidos = async (req, res) => {
         //
         // La forma de la respuesta es la de antes a proposito: el componente
         // del dashboard lee item.producto.nombre y item.totalVendido.
-        const filas = await sequelize.query(
+        const filas = await consultar(
             `SELECT "idProducto", nombre, unidades
                FROM mv_ventas_por_producto
               ORDER BY unidades DESC
