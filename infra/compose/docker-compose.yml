@@ -123,6 +123,15 @@ services:
       # sync({alter:true}) recreaba las claves foraneas en cada arranque.
       DB_SYNC: ${DB_SYNC:-none}
       DB_SEED: ${DB_SEED:-true}
+      # Seguridad (punto 14). Lista exacta de origenes, no subcadenas.
+      CORS_ORIGENES: ${CORS_ORIGENES:-http://localhost:4200,http://localhost:8080}
+      LIMITE_LOGIN: ${LIMITE_LOGIN:-10}
+      LIMITE_API: ${LIMITE_API:-300}
+      LIMITE_CHATBOT: ${LIMITE_CHATBOT:-10}
+      # La documentacion no se sirve salvo que se pida, y pide clave.
+      SWAGGER_HABILITADO: ${SWAGGER_HABILITADO:-false}
+      SWAGGER_USER: ${SWAGGER_USER:-}
+      SWAGGER_PASSWORD: ${SWAGGER_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
@@ -282,7 +291,7 @@ services:
   # alertmanager.yml y este servicio se borra.
   receptor-alertas:
     profiles: ["monitoreo"]
-    image: nginx:1.27-alpine
+    image: nginx:1.29-alpine
     container_name: restoya_receptor_alertas
     restart: unless-stopped
     volumes:

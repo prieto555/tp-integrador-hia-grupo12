@@ -25,7 +25,10 @@ COPY . .
 RUN npx ng build --configuration production
 
 
-FROM nginx:1.27-alpine AS runtime
+# nginx 1.29. Se subio desde 1.27 por el escaneo del punto 14: la imagen de
+# 1.27 arrastraba 3 vulnerabilidades criticas y 64 altas de su propio Alpine
+# (brotli, curl, c-ares...), ninguna del codigo de este proyecto.
+FROM nginx:1.29-alpine AS runtime
 
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=build /app/dist/proyfrontendgrupo13/browser /usr/share/nginx/html
