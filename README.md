@@ -124,7 +124,7 @@ aprobación y bloquea el borrado y el *force push*. La configuración está
 versionada en `.github/ruleset-main.json`, así que se puede volver a aplicar con:
 
 ```bash
-gh api -X POST repos/prieto555/tp-integrador-hia-grupo13/rulesets --input .github/ruleset-main.json
+gh api -X POST repos/prieto555/tp-integrador-hia-grupo12/rulesets --input .github/ruleset-main.json
 ```
 
 Se comprobó intentando un push directo a `main`:
@@ -180,14 +180,21 @@ repositorio. Cada uno trabaja en su rama y abre un *pull request* a
 | 4 · Túnel y monitoreo | `feature/4-tunel-monitoreo` | *a definir* |
 | 5 · Procesos y automatización | `feature/5-procesos` | *a definir* |
 
-> **Ojo con el nombre del repositorio.** Se llama
-> `tp-integrador-hia-grupo13` porque se creó antes de confirmar el número de
-> grupo. El grupo es el **12**. Renombrarlo en GitHub mantiene funcionando la
-> dirección vieja por redirección, así que se puede hacer cuando quieran.
-> Los nombres `proybackendgrupo13` y `proyfrontendgrupo13` son otra cosa:
-> vienen de la aplicación original de Programación y Servicios Web, donde el
-> grupo sí era el 13. Cambiarlos toca `angular.json`, las rutas de
-> compilación y el `Dockerfile`, y no aporta nada a este trabajo.
+> **El repositorio se renombró.** Se había creado como
+> `tp-integrador-hia-grupo13`, antes de confirmar el número de grupo, y el
+> 10/11 pasó a **`tp-integrador-hia-grupo12`**. Si lo clonaste antes, no
+> hace falta que hagas nada: GitHub redirige la dirección vieja. Igual
+> conviene actualizar el remoto, porque la redirección no es para siempre:
+>
+> ```bash
+> git remote set-url origin https://github.com/prieto555/tp-integrador-hia-grupo12.git
+> ```
+>
+> Los nombres `proybackendgrupo13` y `proyfrontendgrupo13` **no** se
+> cambiaron, y es a propósito: vienen de la aplicación original de
+> Programación y Servicios Web, donde el grupo sí era el 13. Tocarlos
+> significa cambiar `angular.json`, las rutas de compilación y el
+> `Dockerfile`, y no aporta nada a este trabajo.
 
 ## Repositorios de origen
 
