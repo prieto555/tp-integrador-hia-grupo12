@@ -27,7 +27,7 @@ de documento, y algunos documentos se cubren dentro de otro.
 | 13 | Flujos de n8n | [`14-automatizacion.md`](14-automatizacion.md) | Escrito; faltan las ejecuciones |
 | 14 | Informe de seguridad | [`09-seguridad.md`](09-seguridad.md) | Hecho |
 | 15 | Procedimiento de backup y restauración | [`05-docker.md`](05-docker.md), sección de copias | Hecho |
-| 16 | Limitaciones conocidas y mejoras futuras | `16-limitaciones.md` | **Falta** (hay que juntar las secciones de limitaciones de cada informe) |
+| 16 | Limitaciones conocidas y mejoras futuras | [`16-limitaciones.md`](16-limitaciones.md) | Hecho |
 
 Además, fuera de la lista de los dieciséis:
 
