@@ -275,10 +275,18 @@ jobs:
           echo "$cuerpo" | grep -q '^\[' || { echo "No devolvio un arreglo."; exit 1; }
 
           echo "== 4. /metrics NO es alcanzable desde afuera (punto 14) =="
-          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/metrics)
-          echo "GET /metrics por nginx -> $codigo"
-          [ "$codigo" = "200" ] && { echo "Las metricas quedaron publicadas."; exit 1; }
-          echo "Bien: nginx no lo sirve."
+          # OJO con el codigo de estado: nginx sirve una aplicacion de una
+          # sola pagina, asi que "location /" tiene try_files ... /index.html
+          # y CUALQUIER ruta desconocida devuelve 200 con el index de Angular.
+          # La primera version de esta comprobacion miraba el 200 y daba por
+          # expuestas unas metricas que en realidad no salian. Lo que hay que
+          # mirar es QUE devolvio, no con que codigo.
+          cuerpo=$(curl -s http://127.0.0.1:8080/metrics)
+          if echo "$cuerpo" | grep -qE "^(# HELP|# TYPE|http_requests_total|nodejs_heap_size_limit_bytes)"; then
+            echo "Las metricas quedaron publicadas a traves de nginx."
+            exit 1
+          fi
+          echo "Bien: /metrics devuelve el index de la aplicacion, no las metricas."
 
           echo "== 5. ningun contenedor quedo reiniciandose =="
           docker compose --profile app ps
