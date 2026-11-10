@@ -1,0 +1,239 @@
+{
+  "name": "F03 - Informe semanal de rendimiento a Nextcloud",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 0 8 * * 1" }]
+        }
+      },
+      "id": "f0300000-0000-4000-8000-000000000001",
+      "name": "Lunes a las 8",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [-920, 300],
+      "notesInFlow": true,
+      "notes": "Semanal. Un informe diario de algo que cambia poco se deja de leer a la semana."
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "{__name__=~\"up|pg_up|pg_stat_database_numbackends|pg_replication_is_replica|nodejs_heap_size_used_bytes|nodejs_heap_size_limit_bytes|process_resident_memory_bytes\"}"
+            }
+          ]
+        },
+        "options": { "timeout": 20000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "f0300000-0000-4000-8000-000000000002",
+      "name": "Estado actual",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-700, 220],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[7d])))"
+            }
+          ]
+        },
+        "options": { "timeout": 20000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "f0300000-0000-4000-8000-000000000003",
+      "name": "Percentil 95 por ruta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-700, 380],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "sum by (route, status_code) (increase(http_requests_total[7d]))"
+            }
+          ]
+        },
+        "options": { "timeout": 20000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "f0300000-0000-4000-8000-000000000004",
+      "name": "Peticiones y errores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-700, 540],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analisis de anomalias.\n//\n// Es deterministico y no usa un modelo de lenguaje, a proposito. Un\n// informe automatico que se archiva y se usa como evidencia tiene que dar\n// el mismo resultado con los mismos datos; un modelo no garantiza eso, y\n// ademas significaria mandar las metricas del proyecto a un servicio de\n// un tercero sin necesidad. Los umbrales de abajo son los mismos de las\n// reglas de alerta del punto 10, con su justificacion.\n//\n// Si alguna consulta a Prometheus fallo, se dice en el informe en vez de\n// inventar un numero o dejar el renglon en blanco.\n\nconst leer = (nodo) => {\n  const r = $(nodo).first().json;\n  if (r?.status !== 'success' || !Array.isArray(r?.data?.result)) return null;\n  return r.data.result;\n};\n\nconst estado = leer('Estado actual');\nconst p95 = leer('Percentil 95 por ruta');\nconst trafico = leer('Peticiones y errores');\n\nconst valor = (serie) => Number(serie?.value?.[1]);\nconst UMBRAL_P95_SEG = 1.0;          // la regla de latencia del punto 10\nconst UMBRAL_ERRORES_PCT = 5;        // 5% de 5xx sobre el total\nconst UMBRAL_MEMORIA_PCT = 80;       // contra el techo real de V8, no contra el reservado\n\nconst hallazgos = [];\nconst faltantes = [];\n\n// --- disponibilidad ------------------------------------------------------\nlet lineasEstado = [];\nif (!estado) {\n  faltantes.push('estado de los servicios');\n} else {\n  for (const s of estado.filter((x) => x.metric.__name__ === 'up')) {\n    const vivo = valor(s) === 1;\n    lineasEstado.push(`| ${s.metric.job || '?'} | ${s.metric.instance || '?'} | ${vivo ? 'arriba' : '**CAIDO**'} |`);\n    if (!vivo) hallazgos.push(`El destino **${s.metric.job}/${s.metric.instance}** figura caido ahora mismo.`);\n  }\n\n  const replica = estado.find((x) => x.metric.__name__ === 'pg_replication_is_replica' && valor(x) === 1);\n  if (!replica) {\n    hallazgos.push('Ningun nodo de PostgreSQL se declara replica. O la replica no esta levantada, o su exportador no responde: **no hay copia en caliente**.');\n  }\n\n  const usado = estado.find((x) => x.metric.__name__ === 'nodejs_heap_size_used_bytes');\n  const techo = estado.find((x) => x.metric.__name__ === 'nodejs_heap_size_limit_bytes');\n  if (usado && techo && valor(techo) > 0) {\n    const pct = (valor(usado) / valor(techo)) * 100;\n    lineasEstado.push(`| backend | monticulo de V8 | ${pct.toFixed(1)}% del techo (${(valor(techo) / 1048576).toFixed(0)} MB) |`);\n    if (pct > UMBRAL_MEMORIA_PCT) {\n      hallazgos.push(`El monticulo del backend esta al **${pct.toFixed(1)}%** de su techo. A los 100% el proceso muere: es lo que paso en el punto 5.`);\n    }\n  }\n}\n\n// --- latencia ------------------------------------------------------------\nlet lineasLatencia = [];\nif (!p95) {\n  faltantes.push('percentil 95 de latencia');\n} else if (p95.length === 0) {\n  faltantes.push('percentil 95 de latencia (no hay datos: el backend no recibio trafico en la semana)');\n} else {\n  const ordenadas = p95.filter((s) => Number.isFinite(valor(s)))\n    .sort((a, b) => valor(b) - valor(a)).slice(0, 10);\n  for (const s of ordenadas) {\n    const seg = valor(s);\n    lineasLatencia.push(`| \\`${s.metric.route || 'desconocida'}\\` | ${(seg * 1000).toFixed(1)} ms |`);\n    if (seg > UMBRAL_P95_SEG) {\n      hallazgos.push(`La ruta \\`${s.metric.route}\\` tarda **${(seg * 1000).toFixed(0)} ms** en el percentil 95 (umbral: ${UMBRAL_P95_SEG * 1000} ms).`);\n    }\n  }\n}\n\n// --- errores -------------------------------------------------------------\nlet lineasTrafico = [];\nlet totalPeticiones = 0;\nlet totalErrores = 0;\nif (!trafico) {\n  faltantes.push('conteo de peticiones y errores');\n} else {\n  const porRuta = {};\n  for (const s of trafico) {\n    const n = valor(s);\n    if (!Number.isFinite(n)) continue;\n    const ruta = s.metric.route || 'desconocida';\n    const codigo = String(s.metric.status_code || '');\n    porRuta[ruta] = porRuta[ruta] || { total: 0, errores: 0 };\n    porRuta[ruta].total += n;\n    totalPeticiones += n;\n    if (codigo.startsWith('5')) { porRuta[ruta].errores += n; totalErrores += n; }\n  }\n  for (const [ruta, d] of Object.entries(porRuta).sort((a, b) => b[1].total - a[1].total).slice(0, 10)) {\n    const pct = d.total > 0 ? (d.errores / d.total) * 100 : 0;\n    lineasTrafico.push(`| \\`${ruta}\\` | ${Math.round(d.total)} | ${Math.round(d.errores)} | ${pct.toFixed(1)}% |`);\n    if (pct > UMBRAL_ERRORES_PCT && d.total >= 20) {\n      hallazgos.push(`La ruta \\`${ruta}\\` devolvio **${pct.toFixed(1)}% de errores 5xx** sobre ${Math.round(d.total)} peticiones.`);\n    }\n  }\n}\n\n// --- armado del informe --------------------------------------------------\nconst hoy = new Date();\nconst fecha = hoy.toISOString().slice(0, 10);\nconst nada = (a) => (a.length ? a.join('\\n') : '| (sin datos) | | |');\n\nconst md = `# Informe semanal de rendimiento — RestoYa\n\n**Generado:** ${hoy.toISOString()}  \n**Periodo:** los 7 dias anteriores  \n**Origen:** Prometheus (http://prometheus:9090)  \n**Generado por:** flujo F03 de n8n, sin intervencion manual.\n\n---\n\n## Resumen\n\n${hallazgos.length === 0\n  ? 'Sin anomalias por encima de los umbrales definidos en el punto 10.'\n  : `**${hallazgos.length} hallazgo(s):**\\n\\n` + hallazgos.map((h) => `- ${h}`).join('\\n')}\n${faltantes.length ? `\\n> **Datos que no se pudieron leer:** ${faltantes.join('; ')}. Los numeros de abajo que dependan de eso estan incompletos.` : ''}\n\n---\n\n## Estado de los servicios\n\n| Servicio | Instancia | Estado |\n|---|---|---|\n${nada(lineasEstado)}\n\n## Latencia (percentil 95, 7 dias)\n\nDiez rutas mas lentas. Umbral: ${UMBRAL_P95_SEG * 1000} ms.\n\n| Ruta | p95 |\n|---|---|\n${lineasLatencia.length ? lineasLatencia.join('\\n') : '| (sin trafico en el periodo) | |'}\n\n## Trafico y errores (7 dias)\n\nTotal: ${Math.round(totalPeticiones)} peticiones, ${Math.round(totalErrores)} con error 5xx (${totalPeticiones > 0 ? ((totalErrores / totalPeticiones) * 100).toFixed(2) : '0.00'}%).\n\n| Ruta | Peticiones | Errores 5xx | % |\n|---|---|---|---|\n${lineasTrafico.length ? lineasTrafico.join('\\n') : '| (sin trafico en el periodo) | | | |'}\n\n---\n\n## Como se analiza\n\nEl analisis es deterministico y **no usa un modelo de lenguaje**. Es una\ndecision, no una limitacion: este informe se archiva y se usa como\nevidencia, asi que con los mismos datos tiene que dar el mismo resultado.\nUn modelo no garantiza eso, y ademas obligaria a mandar las metricas del\nproyecto a un servicio de un tercero sin necesidad.\n\nLos umbrales son los mismos de las reglas de alerta del punto 10:\n\n| Que | Umbral | Por que |\n|---|---|---|\n| Latencia p95 | ${UMBRAL_P95_SEG * 1000} ms | Despues del punto 5 ninguna consulta pasa de 1,4 ms; un segundo de p95 es espera, no base de datos |\n| Errores 5xx | ${UMBRAL_ERRORES_PCT}% | Por debajo son fallos sueltos; por encima es algo roto |\n| Monticulo de V8 | ${UMBRAL_MEMORIA_PCT}% del **techo** | Medido contra heap_size_limit y no contra el reservado: ese error nos tuvo una alerta sonando sin motivo (INC-13) |\n`;\n\nreturn [{ json: {\n  nombreArchivo: `informe-rendimiento-${fecha}.md`,\n  contenido: md,\n  hallazgos: hallazgos.length,\n  faltantes: faltantes.length,\n} }];"
+      },
+      "id": "f0300000-0000-4000-8000-000000000005",
+      "name": "Analizar y redactar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-420, 380]
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "contenido",
+        "options": { "fileName": "={{ $json.nombreArchivo }}", "mimeType": "text/markdown" }
+      },
+      "id": "f0300000-0000-4000-8000-000000000006",
+      "name": "Convertir a archivo",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [-180, 380]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://nextcloud/remote.php/dav/files/{{ $env.NEXTCLOUD_USUARIO_BOT }}/RestoYa/04-Informes/Rendimiento/{{ $('Analizar y redactar').first().json.nombreArchivo }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": { "timeout": 30000 }
+      },
+      "id": "f0300000-0000-4000-8000-000000000007",
+      "name": "Subir a Nextcloud",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 380],
+      "credentials": {
+        "httpBasicAuth": { "id": "CRED_NEXTCLOUD_BOT", "name": "Nextcloud - cuenta automatizacion" }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true,
+      "notes": "WebDAV con una contrasena de aplicacion de la cuenta 'automatizacion', que solo tiene permiso sobre la carpeta de informes"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ $('Analizar y redactar').first().json.hallazgos }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0300000-0000-4000-8000-000000000008",
+      "name": "Hubo hallazgos",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [300, 380]
+    },
+    {
+      "parameters": {
+        "fromEmail": "automatizacion@restoya.test",
+        "toEmail": "incidencias@restoya.test",
+        "subject": "=[ATENCION] Informe semanal: {{ $('Analizar y redactar').first().json.hallazgos }} hallazgo(s)",
+        "emailFormat": "text",
+        "text": "=El informe semanal de rendimiento encontro {{ $('Analizar y redactar').first().json.hallazgos }} cosa(s) por encima de los umbrales.\n\nEl informe completo quedo en Nextcloud:\nhttp://localhost:8081/apps/files/?dir=/RestoYa/04-Informes/Rendimiento\n\nArchivo: {{ $('Analizar y redactar').first().json.nombreArchivo }}\n\nNO se abrio incidencia automaticamente: un hallazgo del informe semanal\nes algo para mirar, no necesariamente algo roto. Si corresponde, se abre\na mano.",
+        "options": {}
+      },
+      "id": "f0300000-0000-4000-8000-000000000009",
+      "name": "Avisar con hallazgos",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [540, 280],
+      "credentials": {
+        "smtp": { "id": "CRED_SMTP_MAILPIT", "name": "Mailpit del laboratorio" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "automatizacion@restoya.test",
+        "toEmail": "incidencias@restoya.test",
+        "subject": "[OK] Informe semanal de rendimiento",
+        "emailFormat": "text",
+        "text": "=Sin anomalias por encima de los umbrales.\n\nEl informe quedo igual en Nextcloud, archivado:\nhttp://localhost:8081/apps/files/?dir=/RestoYa/04-Informes/Rendimiento\n\nArchivo: {{ $('Analizar y redactar').first().json.nombreArchivo }}",
+        "options": {}
+      },
+      "id": "f0300000-0000-4000-8000-00000000000a",
+      "name": "Avisar sin novedad",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [540, 480],
+      "credentials": {
+        "smtp": { "id": "CRED_SMTP_MAILPIT", "name": "Mailpit del laboratorio" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## F03 — Informe semanal a Nextcloud\n\n**Disparador:** lunes a las 8.\n\n**Componentes que toca:** Prometheus (métricas), Nextcloud (archivo) y Mailpit (aviso). Más los exportadores de PostgreSQL y del backend, de donde salen los números.\n\n**Tres consultas distintas** —estado, latencia p95 por ruta, peticiones y errores— porque cada una responde una pregunta diferente y mezclarlas daría un promedio que no significa nada.\n\n**El análisis es determinístico, no un modelo de lenguaje.** Es una decisión: el informe se archiva y se usa como evidencia, así que con los mismos datos tiene que dar el mismo resultado. Y no hay razón para mandar las métricas del proyecto a un tercero.\n\n**Si una consulta falla,** el informe lo dice (\"datos que no se pudieron leer\") en vez de inventar un número o dejar el renglón vacío. Un informe automático que miente en silencio es peor que no tener informe.\n\n**No abre incidencia.** Un hallazgo semanal es algo para mirar; si corresponde, se abre a mano. Lo que sí abre incidencia sola es F01, que reacciona a una alerta crítica en el momento.",
+        "height": 540,
+        "width": 440
+      },
+      "id": "f0300000-0000-4000-8000-00000000000b",
+      "name": "Nota - como funciona",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-920, -280]
+    }
+  ],
+  "connections": {
+    "Lunes a las 8": {
+      "main": [[
+        { "node": "Estado actual", "type": "main", "index": 0 },
+        { "node": "Percentil 95 por ruta", "type": "main", "index": 0 },
+        { "node": "Peticiones y errores", "type": "main", "index": 0 }
+      ]]
+    },
+    "Estado actual": { "main": [[{ "node": "Analizar y redactar", "type": "main", "index": 0 }]] },
+    "Percentil 95 por ruta": { "main": [[{ "node": "Analizar y redactar", "type": "main", "index": 0 }]] },
+    "Peticiones y errores": { "main": [[{ "node": "Analizar y redactar", "type": "main", "index": 0 }]] },
+    "Analizar y redactar": { "main": [[{ "node": "Convertir a archivo", "type": "main", "index": 0 }]] },
+    "Convertir a archivo": { "main": [[{ "node": "Subir a Nextcloud", "type": "main", "index": 0 }]] },
+    "Subir a Nextcloud": { "main": [[{ "node": "Hubo hallazgos", "type": "main", "index": 0 }]] },
+    "Hubo hallazgos": {
+      "main": [
+        [{ "node": "Avisar con hallazgos", "type": "main", "index": 0 }],
+        [{ "node": "Avisar sin novedad", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Jujuy",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {}
+}

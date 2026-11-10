@@ -1,0 +1,352 @@
+{
+  "_comentario": [
+    "Las 15 incidencias reales del proyecto (punto 11). Ninguna es inventada:",
+    "todas aparecieron trabajando los puntos 4 a 14 y todas tienen un commit",
+    "que las cierra. La columna 'commit' es el vinculo que pide la consigna",
+    "entre la incidencia y el cambio de codigo.",
+    "",
+    "Quien reporta y quien resuelve es gprieto en todas porque es quien hizo",
+    "el trabajo hasta ahora. Cuando el grupo reparta los cinco frentes, las",
+    "que sigan abiertas se reasignan: eso es lo que corresponde, y no poner",
+    "nombres de companeros en trabajo que no hicieron."
+  ],
+
+  "usuarios": [
+    { "usuario": "garamayo", "nombre": "Aramayo, Gerardo Leonel", "email": "garamayo@restoya.test", "acceso": "developer" },
+    { "usuario": "jarmella", "nombre": "Armella, Julian Enrique", "email": "jarmella@restoya.test", "acceso": "developer" },
+    { "usuario": "fcruz",    "nombre": "Cruz, Florencia Agustina", "email": "fcruz@restoya.test",   "acceso": "developer" },
+    { "usuario": "fpol",     "nombre": "Pol, Jaime Facundo",       "email": "fpol@restoya.test",    "acceso": "developer" },
+    { "usuario": "gprieto",  "nombre": "Prieto, Gabriel Arturo",   "email": "gprieto@restoya.test", "acceso": "manager" }
+  ],
+
+  "categorias": [
+    "Backend",
+    "Frontend",
+    "Base de datos",
+    "Infraestructura y Docker",
+    "Seguridad",
+    "Monitoreo",
+    "CI/CD"
+  ],
+
+  "incidencias": [
+    {
+      "ref": "INC-01",
+      "resumen": "GET /api/pedidos/cocina tumba el backend entero con JavaScript heap out of memory",
+      "categoria": "Backend",
+      "severidad": "block",
+      "prioridad": "immediate",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["rendimiento", "punto-5"],
+      "descripcion": "La pantalla de cocina pide todos los pedidos sin ningun limite. Con la base de prueba cargada (1.330.000 pedidos en estado PENDIENTE o EN_PREPARACION) el proceso de Node supera el techo del monticulo de V8 (2240 MB) y muere. No es que la pantalla tarde: se cae la API COMPLETA, incluida la parte que no tiene nada que ver con cocina.",
+      "pasos": "1. Cargar el conjunto de datos de prueba del punto 4 (6.000.000 de pedidos).\n2. Levantar el backend: docker compose --profile app up -d\n3. Abrir http://127.0.0.1:8080 y entrar a la pantalla de cocina.\n4. Mirar: docker logs restoya_backend -f",
+      "adicional": "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n\nLo importante para la defensa: despues de poner el indice, la consulta SQL bajo de 1204,8 ms a 0,9 ms y el proceso SEGUIA MURIENDO. Un indice acelera la busqueda de las filas, no evita traer un millon de ellas a la memoria de Node. El problema no era la base: era la falta de LIMIT.",
+      "notas": [
+        "Medido con EXPLAIN (ANALYZE, BUFFERS): la consulta lee 1.330.000 filas y las serializa a JSON. El pico de memoria esta en la serializacion, no en el driver.",
+        "Se agrega LIMITE_COCINA = 100 por defecto y LIMITE_COCINA_MAX = 300. El frontend no muestra mas de una pantalla de pedidos igual, asi que no se pierde nada visible."
+      ],
+      "horas": 3.5,
+      "commit": "44bb050",
+      "archivos": "backend/src/controllers/pedido.controller.js",
+      "verificacion": "Con el limite puesto, la misma pantalla responde en 0,9 ms y el proceso se queda en 41 MB. Se repitio la navegacion 10 veces seguidas sin que el contenedor se reinicie."
+    },
+    {
+      "ref": "INC-02",
+      "resumen": "El filtro de CORS compara subcadenas: onrender.com.sitio-falso.net pasa el control",
+      "categoria": "Seguridad",
+      "severidad": "major",
+      "prioridad": "immediate",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "punto-14"],
+      "descripcion": "El control de origen estaba escrito como origin.includes('onrender.com'). Eso es String.prototype.includes, no Array.prototype.includes: pregunta si el texto 'onrender.com' aparece EN ALGUN LADO del origen. Cualquiera que registre onrender.com.sitio-falso.net pasa el control y puede hacer peticiones con las credenciales de la victima desde su propio sitio.",
+      "pasos": "1. curl -H \"Origin: https://onrender.com.sitio-falso.net\" -I http://127.0.0.1:8080/api/productos\n2. Mirar la cabecera Access-Control-Allow-Origin en la respuesta.",
+      "adicional": "Antes del arreglo la respuesta devolvia el origen falso como permitido. Es el error tipico de confundir los dos includes, y pasa desapercibido porque el codigo 'se lee bien'.",
+      "notas": [
+        "Se reemplaza por una lista exacta leida de CORS_ORIGENES, comparada con Array.includes sobre el valor completo del encabezado."
+      ],
+      "horas": 1.0,
+      "commit": "cae3fda",
+      "archivos": "backend/index.js",
+      "verificacion": "Repetido el mismo curl: ahora la peticion se rechaza y no aparece Access-Control-Allow-Origin. Los origenes de la lista siguen funcionando."
+    },
+    {
+      "ref": "INC-03",
+      "resumen": "POST /api/chatbot no pide autenticacion ni tiene limite, y gasta la cuota de Gemini del proyecto",
+      "categoria": "Seguridad",
+      "severidad": "major",
+      "prioridad": "immediate",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "abuso-de-api", "punto-14"],
+      "descripcion": "La ruta del chatbot estaba abierta: sin token, sin limite de peticiones, y reenviando cada mensaje a la API de Gemini con la clave del proyecto. Cualquiera con la direccion podia usar la cuenta del grupo como si fuera propia, hasta agotar la cuota o la facturacion.",
+      "pasos": "1. Sin iniciar sesion: for i in $(seq 1 50); do curl -s -X POST http://127.0.0.1:8080/api/chatbot -H 'Content-Type: application/json' -d '{\"mensaje\":\"hola\"}' -o /dev/null -w \"%{http_code} \"; done\n2. Antes del arreglo: 50 respuestas 200, y 50 llamadas facturadas a Gemini.",
+      "adicional": "Es el caso de 'abuso de API' que el punto 14 pide considerar. El dano no es robo de datos: es consumo de un recurso pago de un tercero a nombre del grupo.",
+      "notas": [
+        "Se agrega un limitador propio de 10 por minuto (LIMITE_CHATBOT), mas estricto que el del resto de la API, porque cada peticion cuesta plata.",
+        "Queda anotado como mejora futura exigir token tambien aca; hoy el chatbot es una funcion publica de la aplicacion por diseno."
+      ],
+      "horas": 1.5,
+      "commit": "cae3fda",
+      "archivos": "backend/index.js",
+      "verificacion": "La peticion 11 del mismo minuto devuelve 429. Comprobado con el bucle de arriba."
+    },
+    {
+      "ref": "INC-04",
+      "resumen": "Swagger esta publicado sin clave y la raiz del sitio redirige ahi",
+      "categoria": "Seguridad",
+      "severidad": "major",
+      "prioridad": "urgent",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "exposicion", "punto-14"],
+      "descripcion": "GET / redirigia a /api-docs, que servia la documentacion completa de la API: todas las rutas, todos los parametros, todos los modelos. Es el indice de la superficie de ataque, entregado a quien entre a la direccion principal.",
+      "pasos": "1. curl -I http://127.0.0.1:8080/\n2. Seguir la redireccion y mirar /api-docs sin ninguna credencial.",
+      "notas": [
+        "Ahora no se publica salvo que SWAGGER_HABILITADO sea true, y en ese caso pide usuario y contrasena por Basic.",
+        "La comparacion de la contrasena usa crypto.timingSafeEqual y no ===, para no filtrar informacion por el tiempo que tarda en responder."
+      ],
+      "horas": 1.0,
+      "commit": "cae3fda",
+      "archivos": "backend/index.js",
+      "verificacion": "Con la variable en false, /api-docs devuelve 404. Con true y sin credenciales, 401. Con las credenciales correctas, la documentacion."
+    },
+    {
+      "ref": "INC-05",
+      "resumen": "X-Forwarded-For sin trust proxy deja sin efecto el limite de intentos de login",
+      "categoria": "Seguridad",
+      "severidad": "major",
+      "prioridad": "urgent",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "punto-5", "punto-14"],
+      "descripcion": "Express estaba detras de nginx pero sin app.set('trust proxy'). Resultado: req.ip devolvia siempre la IP del contenedor de nginx, asi que el limitador de intentos de login contaba TODOS los intentos del mundo como si fueran de la misma IP... o, peor, los distribuia mal. El control existia y no protegia de nada.",
+      "pasos": "1. Antes del arreglo, dentro del contenedor: node -e \"...\" mostrando req.ip en cada peticion.\n2. Todas las peticiones llegaban con la IP de la red interna de Docker.",
+      "notas": [
+        "Se agrega app.set('trust proxy', 1): uno solo, el nginx propio. Poner 'true' confiaria en toda la cadena de encabezados, que es justamente lo que permite falsificarla."
+      ],
+      "horas": 1.0,
+      "commit": "44bb050",
+      "archivos": "backend/index.js",
+      "verificacion": "req.ip ahora devuelve la direccion real del cliente y el limitador cuenta por cliente. Encadena con INC-06."
+    },
+    {
+      "ref": "INC-06",
+      "resumen": "proxy-addr permite falsificar X-Forwarded-For y esquivar el limitador de login (critica de Trivy)",
+      "categoria": "Seguridad",
+      "severidad": "crash",
+      "prioridad": "immediate",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "dependencias", "cadena-de-suministro", "punto-14"],
+      "descripcion": "El escaneo de la imagen del backend con Trivy devolvio una vulnerabilidad critica en proxy-addr, la biblioteca que Express usa para resolver req.ip cuando hay trust proxy. Permite falsificar la direccion usando una forma IPv4 mapeada en IPv6. Encadenado con INC-05, el resultado es que el limite de intentos de login que acababamos de arreglar se podia esquivar cambiando un encabezado.",
+      "pasos": "1. docker build -t restoya-backend:local ./backend\n2. trivy image --severity CRITICAL,HIGH restoya-backend:local",
+      "adicional": "Esta es la que mas ensena de las 15: dos cosas que por separado parecen menores (confiar en el proxy, una dependencia desactualizada) se suman en un camino de ataque concreto. Tambien es el ejemplo de 'ataque a la cadena de suministro' que pide el punto 14: el codigo del grupo no tenia el fallo.",
+      "notas": [
+        "Actualizada la dependencia. Nuevo escaneo: la imagen del backend paso de 1 critica y 33 altas a 0 criticas y 6 altas.",
+        "Las 6 que quedan no tienen parche publicado (brotli de Alpine, biblioteca estandar de Go en la imagen de postgres) y estan listadas en docs/09-seguridad.md."
+      ],
+      "horas": 2.0,
+      "commit": "cae3fda",
+      "archivos": "backend/package.json, backend/package-lock.json",
+      "verificacion": "trivy image --severity CRITICAL restoya-backend:local devuelve 0 resultados."
+    },
+    {
+      "ref": "INC-07",
+      "resumen": "El limite de intentos de login esta en 100 cada 15 minutos con el comentario 'Aumentado para pruebas intensivas'",
+      "categoria": "Seguridad",
+      "severidad": "minor",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["seguridad", "punto-14"],
+      "descripcion": "Un valor subido para probar que quedo en el codigo. 100 intentos cada 15 minutos son 9600 por dia contra una sola cuenta: suficiente para un diccionario de contrasenas comunes.",
+      "pasos": "1. Buscar en backend/index.js el limitador de /api/auth.\n2. Antes del arreglo: max: 100.",
+      "notas": [
+        "Ahora sale de LIMITE_LOGIN, con 10 por defecto. Configurable para poder subirlo en desarrollo sin tocar el codigo, que es lo que habia causado el problema."
+      ],
+      "horas": 0.5,
+      "commit": "cae3fda",
+      "archivos": "backend/index.js",
+      "verificacion": "El intento 11 dentro de la misma ventana devuelve 429. Comprobado."
+    },
+    {
+      "ref": "INC-08",
+      "resumen": "sequelize.sync({alter:true}) en el arranque recrea las claves foraneas y acumulo 8 restricciones UNIQUE duplicadas en mesas",
+      "categoria": "Base de datos",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["integridad", "punto-5"],
+      "descripcion": "El backend corria sync({alter:true}) en cada arranque. Sequelize compara el modelo con el esquema y 'arregla' las diferencias: en la practica borraba y recreaba las 7 claves foraneas cada vez, y en mesas fue agregando una restriccion UNIQUE nueva por arranque hasta juntar 8 iguales. Cada una es un indice que PostgreSQL mantiene en cada INSERT y en cada UPDATE.",
+      "pasos": "1. SELECT conname FROM pg_constraint WHERE conrelid = 'mesas'::regclass;\n2. Antes del arreglo aparecian mesas_numero_key, mesas_numero_key1 ... mesas_numero_key7.",
+      "adicional": "Ademas del costo, alter:true es peligroso: toma un ACCESS EXCLUSIVE sobre la tabla y puede intentar cambiar tipos de columna sobre datos reales. No es algo que deba correr al arrancar un servicio.",
+      "notas": [
+        "Se saca del arranque. Ahora DB_SYNC controla el comportamiento y vale 'none' por defecto: el arranque solo verifica que la conexion funcione.",
+        "Las 7 restricciones duplicadas se borraron a mano."
+      ],
+      "horas": 2.0,
+      "commit": "44bb050",
+      "archivos": "backend/index.js, infra/compose/docker-compose.yml",
+      "verificacion": "Reiniciado el backend 5 veces seguidas: pg_constraint no cambia. El arranque bajo de 4,1 s a 0,9 s."
+    },
+    {
+      "ref": "INC-09",
+      "resumen": "usuarios.email no tiene indice ni UNIQUE: el login tarda 282 ms y el alta tiene una condicion de carrera",
+      "categoria": "Base de datos",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["rendimiento", "integridad", "punto-5"],
+      "descripcion": "Cada inicio de sesion hacia un recorrido completo de la tabla de usuarios. Pero lo serio no era eso: sin UNIQUE en la base, el alta comprobaba 'no existe este correo' con un SELECT y despues insertaba. Dos altas simultaneas con el mismo correo pasan las dos el SELECT y se insertan las dos.",
+      "pasos": "1. EXPLAIN ANALYZE SELECT * FROM usuarios WHERE email = 'alguien@ejemplo.test';\n2. Antes: Seq Scan, 282,1 ms.\n3. Para la carrera: dos POST /api/usuarios simultaneos con el mismo email.",
+      "notas": [
+        "Indice unico sobre email. La consulta pasa a 0,09 ms y la base misma impide el duplicado.",
+        "El modelo declara unique: true y el controlador traduce SequelizeUniqueConstraintError a un 400 con mensaje claro, en vez del 500 que daba antes."
+      ],
+      "horas": 1.5,
+      "commit": "44bb050",
+      "archivos": "backend/src/models/usuario.model.js, backend/src/controllers/usuario.controller.js, infra/postgres/optimizacion/indices.sql",
+      "verificacion": "282,1 ms -> 0,09 ms. El segundo alta con el mismo correo devuelve 400 y no se inserta."
+    },
+    {
+      "ref": "INC-10",
+      "resumen": "El ticket promedio se calcula con un reduce de JavaScript sobre 2.000.000 de filas",
+      "categoria": "Backend",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["rendimiento", "punto-5"],
+      "descripcion": "El tablero traia todos los pagos en estado PAGADO con findAll y los sumaba en Node con un reduce. Dos millones de filas viajando de la base al proceso para devolver un solo numero.",
+      "pasos": "1. Abrir el tablero con la base de prueba cargada.\n2. Mirar la memoria del proceso: docker stats restoya_backend",
+      "adicional": "Paso por tres versiones y las tres estan documentadas en el codigo: reduce en JS (tumbaba el proceso), AVG() en la base (171 ms, sin transferir nada), y vista materializada (1,4 ms). La segunda ya resolvia el problema grave; la tercera es optimizacion.",
+      "notas": [
+        "Ningun indice mejora el AVG(): el 33% de la tabla esta en PAGADO y hay que leerla igual. Por eso la solucion fue la vista materializada y no un indice mas."
+      ],
+      "horas": 2.0,
+      "commit": "44bb050",
+      "archivos": "backend/src/controllers/dashboard.controller.js, infra/postgres/optimizacion/vistas-materializadas.sql",
+      "verificacion": "1,4 ms y memoria estable. El tablero completo bajo de varios segundos a milisegundos."
+    },
+    {
+      "ref": "INC-11",
+      "resumen": "nginx devuelve 502 cuando se recrea el contenedor del backend",
+      "categoria": "Infraestructura y Docker",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["infraestructura", "punto-10"],
+      "descripcion": "nginx resuelve el nombre 'backend' una sola vez, al arrancar, y se queda con esa IP. Docker le asigna una IP nueva a cada contenedor recreado, asi que despues de cualquier docker compose up -d que toque el backend, nginx sigue hablandole a una direccion que ya no existe: 502 con el backend perfectamente sano.",
+      "pasos": "1. docker compose --profile app up -d\n2. Comprobar que http://127.0.0.1:8080/api/productos responde 200.\n3. docker compose --profile app up -d --force-recreate backend\n4. Repetir la peticion: 502.",
+      "adicional": "Es el caso que mas se parece a 'funciona en mi maquina': aparece solo despues de recrear, nunca en un arranque limpio.",
+      "notas": [
+        "Arreglado con resolver 127.0.0.11 (el DNS interno de Docker) valid=10s y proxy_pass por variable, que obliga a nginx a resolver en cada peticion."
+      ],
+      "horas": 2.0,
+      "commit": "f82e97d",
+      "archivos": "frontend/nginx.conf",
+      "verificacion": "Forzada la recreacion: la IP del backend paso de .13 a .11 y las tres peticiones siguientes dieron 200 sin tocar nginx."
+    },
+    {
+      "ref": "INC-12",
+      "resumen": "El servicio de copias de seguridad queda en bucle de reinicio: /backup.sh: set: line 7: illegal option -",
+      "categoria": "Infraestructura y Docker",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["infraestructura", "windows", "punto-14"],
+      "descripcion": "Git en Windows viene con core.autocrlf=true: al bajar el repositorio convierte los finales de linea a CRLF. /bin/sh del contenedor lee 'set -u\\r' y no entiende la opcion. El contenedor arranca, muere y vuelve a arrancar para siempre.",
+      "pasos": "1. Clonar el repositorio en Windows con la configuracion por defecto.\n2. docker compose --profile app up -d\n3. docker logs restoya_backup",
+      "adicional": "Le hubiera pasado a cualquiera del grupo que clonara en Windows, que son todos. No es un problema de 'esta maquina'.",
+      "notas": [
+        "Se agrega .gitattributes forzando eol=lf para *.sh, *.sql, *.yml, *.conf, Dockerfile y .env.example. Se normalizaron 20 archivos."
+      ],
+      "horas": 1.5,
+      "commit": "cae3fda",
+      "archivos": ".gitattributes",
+      "verificacion": "Borrado y vuelto a clonar en Windows: el servicio de copias arranca y hace la copia. file backup.sh devuelve 'ASCII text' sin 'with CRLF'."
+    },
+    {
+      "ref": "INC-13",
+      "resumen": "La alerta de memoria del backend se dispara con el sistema ocioso",
+      "categoria": "Monitoreo",
+      "severidad": "minor",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["monitoreo", "punto-10"],
+      "descripcion": "La regla comparaba nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes > 0,85. Con el sistema sin hacer nada eso da 0,916, porque V8 mantiene el monticulo RESERVADO casi lleno: 'total' no es el techo, es lo que V8 pidio hasta ahora. Una alerta que suena siempre es una alerta que nadie mira.",
+      "pasos": "1. Levantar el perfil de monitoreo sin trafico.\n2. En Prometheus: nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes\n3. Da 0,916 con 41 MB usados.",
+      "adicional": "El valor que importa es el techo real de V8, que es donde el proceso muere: 2240 MB, el mismo que mato el proceso en INC-01.",
+      "notas": [
+        "El backend ahora publica nodejs_heap_size_limit_bytes, leido de v8.getHeapStatistics().heap_size_limit, y la regla mide contra el. Con el sistema ocioso da 1,7%."
+      ],
+      "horas": 1.5,
+      "commit": "f82e97d",
+      "archivos": "backend/src/middlewares/metricas.middleware.js, infra/prometheus/reglas/restoya.yml",
+      "verificacion": "La regla ya no se dispara en reposo. Se comprobo el valor en Prometheus: 0,017."
+    },
+    {
+      "ref": "INC-14",
+      "resumen": "Las alertas llegan a Alertmanager pero el aviso no sale: el receptor devuelve 405",
+      "categoria": "Monitoreo",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": ["monitoreo", "punto-10"],
+      "descripcion": "El webhook apuntaba a /-/healthy, que solo acepta GET. Alertmanager manda POST y recibe 405. La alerta se veia en Alertmanager, con lo cual todo 'parecia' andar, pero el aviso no llegaba a ningun lado. Es el peor tipo de fallo de monitoreo: el sistema que avisa esta roto y no avisa que esta roto.",
+      "pasos": "1. Parar el backend para disparar la alerta de servicio caido.\n2. Mirar el registro de Alertmanager: notify retry, 405.",
+      "notas": [
+        "Se agrega un servicio receptor-alertas (nginx) que acepta el POST, registra el cuerpo completo y devuelve 200.",
+        "Para que $request_body tenga contenido hace falta un proxy_pass a un segundo bloque server: nginx no lee el cuerpo si no lo va a reenviar."
+      ],
+      "horas": 2.0,
+      "commit": "f82e97d",
+      "archivos": "infra/prometheus/alertmanager.yml, infra/prometheus/receptor-nginx.conf, infra/compose/docker-compose.yml",
+      "verificacion": "Probada de punta a punta: se paro el backend, la alerta paso a pending a los 32 s, a firing a los 90 s, el receptor registro el JSON completo, y al levantarlo llego el aviso de resuelto."
+    },
+    {
+      "ref": "INC-15",
+      "resumen": "cAdvisor no enumera los contenedores uno por uno en este Docker Desktop",
+      "categoria": "Monitoreo",
+      "severidad": "minor",
+      "prioridad": "normal",
+      "reproducibilidad": "always",
+      "estado": "acknowledged",
+      "resolucion": "open",
+      "etiquetas": ["monitoreo", "limitacion-del-entorno", "punto-10"],
+      "descripcion": "cAdvisor repite 36 veces 'failed to identify the read-write layer ID ... mount-id: no such file or directory' y no publica metricas por contenedor. La causa es que este Docker Desktop usa el almacen de imagenes de containerd (Storage Driver: overlayfs, io.containerd.snapshotter.v1) y cAdvisor busca la capa de escritura en la ruta del almacen clasico, que no existe.",
+      "pasos": "1. docker compose --profile monitoreo up -d\n2. docker logs restoya_cadvisor\n3. En Prometheus: container_memory_usage_bytes{name=~\"restoya.*\"} no devuelve nada.",
+      "adicional": "Se probaron --docker_only=true y --disable_metrics=disk,diskIO en un contenedor de prueba aparte: no alcanza, porque el fallo ocurre al crear el manejador, antes de recolectar.",
+      "notas": [
+        "QUEDA ABIERTA A PROPOSITO. Las dos salidas son cambiar la configuracion de Docker Desktop de la maquina (apagar containerd en Settings, o metrics-addr en daemon.json) y eso es configuracion del equipo de alguien, no del proyecto.",
+        "Mitigacion: los paneles usan el agregado id=\"/docker\" para el conjunto de contenedores, y para el backend se usan sus propias metricas (process_resident_memory_bytes, process_start_time_seconds), que no dependen de cAdvisor."
+      ],
+      "horas": 2.5,
+      "commit": "",
+      "archivos": "infra/grafana/dashboards/restoya.json",
+      "verificacion": "Sin verificar: la incidencia sigue abierta. Lo que si se verifico es la mitigacion: los paneles muestran datos reales por otra via."
+    }
+  ]
+}
