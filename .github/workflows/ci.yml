@@ -219,22 +219,32 @@ jobs:
         working-directory: infra/compose
         run: docker compose --profile app up -d --build
 
-      - name: Esperar a que responda
+      # Se espera a la API y no al frente. El frente es estatico: nginx lo
+      # sirve en cuanto arranca, asi que esperar a que responda no dice nada
+      # sobre el backend. La primera version de esta prueba esperaba a "/" y
+      # despues fallaba con 502 en la peticion siguiente, porque el backend
+      # todavia estaba creando el esquema y sembrando datos.
+      - name: Esperar a que la API responda
         working-directory: infra/compose
         run: |
           set -eu
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/ > /dev/null 2>&1; then
-              echo "nginx responde (intento $i)."
-              break
-            fi
-            if [ "$i" = 60 ]; then
-              echo "No respondio en 120 s."
-              docker compose --profile app ps
-              docker compose --profile app logs --tail=120
-              exit 1
-            fi
-            sleep 2
+          for i in $(seq 1 90); do
+            codigo=$(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8080/api/productos || echo 000)
+            case "$codigo" in
+              000|502|503|504)
+                if [ "$i" = 90 ]; then
+                  echo "La API no respondio en 180 s (ultimo codigo: $codigo)."
+                  docker compose --profile app ps
+                  docker compose --profile app logs --tail=150
+                  exit 1
+                fi
+                sleep 2
+                ;;
+              *)
+                echo "La API responde con HTTP $codigo en el intento $i."
+                break
+                ;;
+            esac
           done
 
       # Las tres cosas que tienen que andar: el frente se sirve, nginx hace de
