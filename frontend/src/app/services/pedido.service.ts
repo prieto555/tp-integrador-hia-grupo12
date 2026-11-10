@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -6,8 +7,8 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class PedidoService {
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/pedidos';
-  private detallesUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/detalles-pedidos';
+  private apiUrl = environment.apiUrl + '/pedidos';
+  private detallesUrl = environment.apiUrl + '/detalles-pedidos';
 
   constructor(private http: HttpClient) { }
 

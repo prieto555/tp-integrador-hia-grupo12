@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
@@ -11,7 +12,7 @@ import { ResumenDashboard } from '../models/resumen-dashboard';
 })
 export class DashboardService {
 
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/dashboard';
+  private apiUrl = environment.apiUrl + '/dashboard';
 
   constructor(private http: HttpClient) { }
 

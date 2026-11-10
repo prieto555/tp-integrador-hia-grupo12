@@ -1,0 +1,758 @@
+{
+  "uid": "restoya-general",
+  "title": "RestoYa — sistema, contenedores, base y aplicación",
+  "description": "Tablero del punto 10. Cuatro filas, de lo más general a lo más específico: el sistema operativo, los contenedores, PostgreSQL y la aplicación. Se lee de arriba hacia abajo cuando algo anda mal: si la fila de arriba está sana, el problema está más abajo.",
+  "tags": [
+    "restoya",
+    "tp-hia"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Sistema operativo",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "gauge",
+      "title": "CPU en uso",
+      "description": "Todo lo que no es tiempo ocioso. En Docker Desktop sobre Windows esto es la máquina virtual de WSL2, no Windows.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Memoria en uso",
+      "description": "Memoria que no está disponible. Se usa MemAvailable y no MemFree porque la caché del sistema de archivos cuenta como libre a efectos prácticos.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
+          "legendFormat": "memoria"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disco libre",
+      "description": "La alerta DiscoPorLlenarse salta por debajo del 15%, que es lo que hace falta para una ronda completa de copias de seguridad.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs\"}",
+          "legendFormat": "{{mountpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Red",
+      "description": "Bytes por segundo entrando y saliendo, sin contar la interfaz de bucle local.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(node_network_receive_bytes_total{device!=\"lo\"}[5m]))",
+          "legendFormat": "entrada"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m]))",
+          "legendFormat": "salida"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Contenedores",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU de los contenedores, en conjunto",
+      "description": "Núcleos consumidos por todo lo que corre en Docker, contra el total de la máquina. No está desglosado por contenedor: Docker Desktop usa el almacén de containerd y cAdvisor no puede enumerarlos (ver docs/08-monitoreo.md). Para el backend, el desglose sale de sus propias métricas.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/docker\"}[5m]))",
+          "legendFormat": "todos los contenedores"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(process_cpu_seconds_total{job=\"backend\"}[5m])",
+          "legendFormat": "backend (proceso)"
+        },
+        {
+          "refId": "C",
+          "expr": "count(count by (cpu) (node_cpu_seconds_total))",
+          "legendFormat": "núcleos disponibles"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 3,
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Memoria de los contenedores",
+      "description": "Todo lo que corre en Docker, y aparte el proceso del backend, que es el que ya se murió una vez por memoria. Ningún servicio tiene límite declarado todavía: es deuda conocida.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "container_memory_working_set_bytes{id=\"/docker\"}",
+          "legendFormat": "todos los contenedores"
+        },
+        {
+          "refId": "B",
+          "expr": "process_resident_memory_bytes{job=\"backend\"}",
+          "legendFormat": "backend (proceso)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reinicios en la última hora",
+      "description": "Cuántas veces arrancó cada proceso vigilado. Con restart: unless-stopped, un servicio puede estar muriéndose cada dos minutos y desde afuera parecer que anda. Pasó en el punto 5. Sale de process_start_time_seconds y no de cAdvisor, por la limitación de containerd.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "changes(process_start_time_seconds[1h])",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "PostgreSQL",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Conexiones abiertas",
+      "description": "El tope es max_connections, 100 por defecto. La alerta salta al 80%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (datname) (pg_stat_database_numbackends{datname!=\"\"})",
+          "legendFormat": "{{datname}}"
+        },
+        {
+          "refId": "B",
+          "expr": "pg_settings_max_connections",
+          "legendFormat": "tope"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Transacciones por segundo",
+      "description": "Confirmadas contra abortadas. Un salto en las abortadas suele ser un interbloqueo o una restricción que empezó a rechazar.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_xact_commit{datname=\"restoyadb\"}[5m]))",
+          "legendFormat": "confirmadas"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(pg_stat_database_xact_rollback{datname=\"restoyadb\"}[5m]))",
+          "legendFormat": "abortadas"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Lecturas servidas desde memoria",
+      "description": "Proporción de bloques que salieron de shared_buffers en lugar del disco. Durante las mediciones del punto 5 fue del 100%. Por debajo del 90% sostenido, algo nuevo está recorriendo tablas.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_blks_hit[10m])) / (sum(rate(pg_stat_database_blks_hit[10m])) + sum(rate(pg_stat_database_blks_read[10m])))",
+          "legendFormat": "aciertos"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.98
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tamaño de la base",
+      "description": "4,2 GB con los 30 millones de filas y los diez índices del punto 5.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "pg_database_size_bytes{datname=\"restoyadb\"}",
+          "legendFormat": "restoyadb"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Bloqueos por tipo",
+      "description": "ACCESS EXCLUSIVE es el que bloquea absolutamente todo, incluidas las lecturas. Es el que tomaba sync({ alter: true }) al recrear las claves foráneas en cada arranque, sobre tablas de seis millones de filas. Este panel está acá para que eso no vuelva a pasar sin que nadie lo vea.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (mode) (pg_locks_count{datname=\"restoyadb\"}) > 0",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 50
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Replicación",
+      "description": "Si el nodo es réplica y cuánto está atrasado. HOY NO HAY RÉPLICA: el punto 6 no está hecho, así que \"es réplica\" vale 0 y el retraso no tiene sentido todavía. El panel queda armado para cuando exista.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "pg_replication_is_replica",
+          "legendFormat": "es réplica (1 = sí)"
+        },
+        {
+          "refId": "B",
+          "expr": "pg_replication_lag_seconds",
+          "legendFormat": "retraso"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Aplicación",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Peticiones por segundo, por ruta",
+      "description": "La ruta es la plantilla (/api/pedidos/:id), no la URL concreta. Si fuera la URL, cada id distinto crearía una serie nueva y la memoria de Prometheus se iría al techo.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 35
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (route) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latencia, percentil 95",
+      "description": "Una de cada veinte peticiones tarda más que esto. Se mira el percentil y no el promedio: el promedio esconde las lentas. La alerta ApiLenta salta en 1 s.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Montículo de Node",
+      "description": "Usado contra total. Es el gráfico que habría mostrado la caída del punto 5: el proceso murió a los 2 GB con JavaScript heap out of memory. La alerta salta al 85%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nodejs_heap_size_used_bytes",
+          "legendFormat": "usado"
+        },
+        {
+          "refId": "B",
+          "expr": "nodejs_heap_size_total_bytes",
+          "legendFormat": "reservado"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Respuestas por código",
+      "description": "Separa los 2xx de los 4xx y 5xx. Un pico de 5xx es la aplicación rompiéndose; un pico de 4xx suele ser el frente mandando algo mal o alguien probando rutas.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status_code) (rate(http_requests_total[5m]))",
+          "legendFormat": "{{status_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Retraso del bucle de eventos",
+      "description": "Cuánto tarda Node en atender lo siguiente que tiene en cola. Node es de un solo hilo: si una petición hace trabajo pesado en JavaScript, este número sube y TODAS las demás esperan, aunque la base responda en un milisegundo.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-restoya"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "nodejs_eventloop_lag_p99_seconds",
+          "legendFormat": "percentil 99"
+        },
+        {
+          "refId": "B",
+          "expr": "nodejs_eventloop_lag_mean_seconds",
+          "legendFormat": "media"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

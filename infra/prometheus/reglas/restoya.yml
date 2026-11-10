@@ -1,0 +1,170 @@
+# Reglas de alerta del punto 10 (E10-05).
+#
+# Cada umbral tiene abajo por qué es ese número y no otro. Un umbral sin
+# justificación es ruido: salta cuando no pasa nada, la gente lo silencia, y
+# el día que importa ya nadie lo mira.
+#
+# Cuatro de las seis salen de cosas que pasaron de verdad en este trabajo, no
+# de una lista de recomendaciones.
+
+groups:
+  # ---------------------------------------------------------------------------
+  - name: disponibilidad
+    rules:
+      - alert: ObjetivoCaido
+        expr: up == 0
+        for: 1m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "{{ $labels.job }} no responde"
+          detalle: >-
+            Prometheus no pudo consultar a {{ $labels.instance }} (trabajo
+            {{ $labels.job }}) durante un minuto. Si es el backend, la
+            aplicación está caída para todo el mundo.
+          por_que_un_minuto: >-
+            Un reinicio normal del backend tarda nueve segundos. Un minuto deja
+            pasar los reinicios y las recargas sin avisar, pero no una caída.
+
+      - alert: ProcesoReiniciandoSolo
+        expr: changes(process_start_time_seconds[15m]) > 2
+        for: 1m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "{{ $labels.job }} se reinició más de dos veces en 15 minutos"
+          detalle: >-
+            El proceso está en un ciclo de caída y reinicio. Con
+            restart: unless-stopped, Docker lo levanta de nuevo y desde afuera
+            parece que todo anda.
+          por_que_existe: >-
+            Esto pasó de verdad. En el punto 5, una sola petición a
+            /api/pedidos/cocina mataba al backend por falta de memoria, Docker
+            lo levantaba, y lo único que lo delataba era el registro. Sin esta
+            alerta, un servicio puede estar muriéndose cada dos minutos y nadie
+            se entera.
+          por_que_no_usa_cadvisor: >-
+            La forma habitual de escribir esto es
+            changes(container_start_time_seconds{name=~"..."}[15m]), con los
+            datos de cAdvisor. Acá no se puede: Docker Desktop guarda las
+            imágenes con el almacén de containerd (Storage Driver overlayfs,
+            io.containerd.snapshotter.v1) y cAdvisor no encuentra la capa de
+            escritura de cada contenedor, así que no los enumera. Se usa
+            process_start_time_seconds, que lo publica cada proceso vigilado.
+            Para el backend es incluso más preciso: mide el proceso que
+            importa, no el contenedor que lo envuelve.
+
+  # ---------------------------------------------------------------------------
+  - name: aplicacion
+    rules:
+      - alert: MemoriaDelBackendAlta
+        expr: >-
+          nodejs_heap_size_used_bytes / nodejs_heap_size_limit_bytes > 0.80
+        for: 2m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "El montículo de Node está al {{ $value | humanizePercentage }} de su techo"
+          detalle: >-
+            El proceso se acerca al límite de memoria de V8. Cuando lo alcanza
+            no se degrada: muere con "JavaScript heap out of memory" y se lleva
+            puestas todas las peticiones en curso.
+          por_que_contra_el_techo_y_no_contra_el_total: >-
+            La versión obvia de esta regla es usado/total, y está mal. V8
+            mantiene el montículo reservado casi lleno a propósito y lo agranda
+            cuando hace falta: recién arrancado, con 41 MB usados, esa relación
+            ya da 0,92. Se probó y la alerta saltó con el sistema ocioso. Lo
+            que importa es cuánto falta para el techo
+            (nodejs_heap_size_limit_bytes, que publica este backend porque
+            prom-client no lo trae).
+          por_que_80: >-
+            Es la alerta que habría cazado la caída del punto 5. El techo en
+            este contenedor son 2240 MB y el proceso murió a los 2 GB, o sea
+            que la cuenta cierra. Al 80% quedan unos 450 MB: a la velocidad a
+            la que crecía mientras armaba 1,33 millones de objetos son
+            segundos, pero son los segundos que hay.
+
+      - alert: ApiLenta
+        expr: >-
+          histogram_quantile(
+            0.95,
+            sum by (le, route) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severidad: media
+        annotations:
+          resumen: "El 95% de las peticiones a {{ $labels.route }} tarda más de 1 s"
+          detalle: >-
+            Una de cada veinte peticiones a esa ruta pasa del segundo.
+          por_que_un_segundo_y_el_percentil_95: >-
+            Después del punto 5, los nueve endpoints responden en menos de
+            23 ms. Un segundo es cuarenta veces peor que eso: no es un pico, es
+            que algo se rompió. Se mira el percentil 95 y no el promedio
+            porque el promedio esconde justamente lo que interesa: si una de
+            cada veinte peticiones tarda diez segundos y el resto un
+            milisegundo, el promedio da medio segundo y parece que está todo
+            bien.
+
+  # ---------------------------------------------------------------------------
+  - name: base_de_datos
+    rules:
+      - alert: ConexionesDeLaBaseAlLimite
+        expr: >-
+          sum(pg_stat_database_numbackends) / on() pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "PostgreSQL usa el {{ $value | humanizePercentage }} de sus conexiones"
+          detalle: >-
+            Cuando se acaban, PostgreSQL rechaza las nuevas con
+            "sorry, too many clients already" y la aplicación deja de
+            responder aunque la base esté perfecta.
+          por_que_80: >-
+            El valor por defecto es 100 conexiones. Sequelize abre un fondo
+            común por proceso, así que el consumo sube de a saltos cuando se
+            agregan réplicas del backend (punto 7) o se conecta pgAdmin. Al 80%
+            quedan veinte conexiones, suficiente para entrar a mirar qué pasa.
+
+      - alert: CacheDeLaBaseConPocosAciertos
+        expr: >-
+          sum(rate(pg_stat_database_blks_hit[10m]))
+          / (sum(rate(pg_stat_database_blks_hit[10m]))
+             + sum(rate(pg_stat_database_blks_read[10m]))) < 0.9
+        for: 10m
+        labels:
+          severidad: media
+        annotations:
+          resumen: "Sólo el {{ $value | humanizePercentage }} de las lecturas sale de memoria"
+          detalle: >-
+            La base está yendo al disco más de lo que debería. Las causas
+            habituales son una consulta nueva sin índice que recorre una tabla
+            entera, o shared_buffers chico para los datos que se usan.
+          por_que_90: >-
+            Con shared_buffers en 512 MB y las consultas del punto 5 medidas,
+            todas las lecturas salían de memoria (shared hit, cero read). Bajar
+            del 90% sostenido diez minutos significa que entró un patrón de
+            acceso nuevo, y conviene ir a mirarlo antes de que se note en los
+            tiempos de respuesta.
+
+  # ---------------------------------------------------------------------------
+  - name: sistema
+    rules:
+      - alert: DiscoPorLlenarse
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "Queda el {{ $value | humanizePercentage }} libre en {{ $labels.mountpoint }}"
+          detalle: >-
+            PostgreSQL sin espacio para el WAL deja de aceptar escrituras y
+            puede quedar en un estado del que hay que sacarlo a mano.
+          por_que_15: >-
+            No es un número de manual, sale de las cuentas de este proyecto: la
+            base ocupa 4,2 GB, cada copia comprimida pesa 466 MB y se conservan
+            siete, o sea 3,2 GB más. Con menos del 15% libre no entra una ronda
+            de copias, y quedarse sin copias es peor que quedarse sin disco.

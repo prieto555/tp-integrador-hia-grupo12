@@ -1,0 +1,84 @@
+# Alertmanager del punto 10.
+#
+# Prometheus decide CUANDO una alerta esta activa; Alertmanager decide A QUIEN
+# se le avisa, cada cuanto se repite y que alertas se agrupan en un solo aviso.
+# Son dos trabajos distintos y por eso son dos programas distintos.
+#
+# Aca no hay correo configurado a proposito: mandar correo desde el TP exige
+# una contrasena de aplicacion de Gmail, y eso es un secreto que no puede
+# entrar al repositorio. El receptor es un webhook local, que deja constancia
+# de que la alerta salio sin que haya nada que ocultar.
+#
+# Para la demostracion alcanza: lo que hay que mostrar es que la regla salta y
+# llega a destino, no que Gmail funciona.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Las alertas que comparten nombre y severidad se juntan en un solo aviso.
+  # Sin esto, si se cae el nodo entero llegan quince correos iguales.
+  group_by: ["alertname", "severidad"]
+  # Espera antes de mandar el primer aviso de un grupo nuevo, por si entran
+  # mas alertas del mismo problema.
+  group_wait: 30s
+  # Espera antes de volver a avisar cuando se suma una alerta a un grupo ya
+  # avisado.
+  group_interval: 5m
+  # Cada cuanto se repite el aviso de algo que sigue roto.
+  repeat_interval: 4h
+  receiver: registro
+
+  routes:
+    # Lo critico no espera treinta segundos ni cuatro horas.
+    - matchers:
+        - severidad = "critica"
+      receiver: registro-y-n8n
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: registro
+    webhook_configs:
+      # El servicio receptor-alertas: un nginx que acepta el POST, escribe el
+      # cuerpo entero en su registro y responde 204. Ese registro es la
+      # evidencia de que el aviso salio y llego.
+      #
+      #   docker logs restoya_receptor_alertas
+      #
+      # El receptor definitivo es un flujo de n8n (punto 13), que ya sabe
+      # mandar correo y abrir un ticket en Mantis (punto 11). Cuando exista se
+      # cambia esta URL y se borra el servicio.
+      - url: http://receptor-alertas:8080/alertas
+        send_resolved: true
+
+  # Lo critico va a los dos lados: al registro, que sigue siendo la evidencia
+  # mas simple de que el aviso salio, y al flujo F01 de n8n, que abre la
+  # incidencia en Mantis y manda el correo (punto 13).
+  #
+  # Un receptor puede tener varios webhook_configs y Alertmanager los llama a
+  # todos. Era eso o duplicar la ruta, que no se puede: cada alerta cae en un
+  # solo receptor.
+  - name: registro-y-n8n
+    webhook_configs:
+      - url: http://receptor-alertas:8080/alertas
+        send_resolved: true
+      - url: http://n8n:5678/webhook/alerta
+        send_resolved: true
+        # El webhook de n8n NO esta abierto: pide una cabecera con un secreto
+        # compartido. Sin ella responde 403. El secreto se lee de un archivo
+        # para que no quede escrito en este archivo, que si esta en el
+        # repositorio; lo genera preparar-n8n.sh.
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/.token-alertas
+
+inhibit_rules:
+  # Si el objetivo esta caido, no tiene sentido avisar ademas que su memoria
+  # esta alta o que la API esta lenta: es la misma noticia contada tres veces.
+  - source_matchers:
+      - alertname = "ObjetivoCaido"
+    target_matchers:
+      - severidad =~ "alta|media"
+    equal: ["instance"]

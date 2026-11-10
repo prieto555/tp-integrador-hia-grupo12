@@ -1,0 +1,670 @@
+name: restoya
+
+# Stack de datos del TP Integrador. Por ahora cubre el punto 4: base de datos,
+# cliente de administracion y backups. El backend y el frontend se suman en el
+# punto 7, sobre esta misma red.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: restoya_db
+    # Por defecto Docker da 64 MB de /dev/shm, y PostgreSQL usa memoria
+    # compartida para los hash join en paralelo. Con 64 MB, la consulta de
+    # la pantalla de cocina falla con "could not resize shared memory
+    # segment ... No space left on device". Ver docs/07-optimizacion-sql.md.
+    shm_size: 512m
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # Acelera la carga masiva del dataset. Es seguro en un entorno de
+      # pruebas: si el contenedor se cae a mitad de una escritura se puede
+      # perder la ultima transaccion. No usar asi en produccion.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - max_wal_size=4GB
+      # Deja registrada toda consulta que tarde mas de 500 ms. Es la fuente
+      # del analisis del punto 5.
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      # El pg_hba sale del repositorio y no del volumen (punto 6). Antes lo
+      # generaba la imagen adentro del volumen: no estaba versionado y para
+      # cambiarlo habia que editarlo a mano dentro del contenedor.
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    ports:
+      # Atado a loopback a proposito: la base no se expone a la red.
+      - "127.0.0.1:${DB_PORT_HOST:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    networks:
+      - interna
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Replica por streaming (punto 6). Perfil aparte: clonar la base de cuatro
+  # gigas lleva un rato y no hace falta para programar.
+  #
+  #   docker compose --profile replica up -d
+  #
+  # La primera vez clona con pg_basebackup; despues arranca directo.
+  # ---------------------------------------------------------------------------
+  db-replica:
+    profiles: ["replica"]
+    image: postgres:16-alpine
+    container_name: restoya_db_replica
+    restart: unless-stopped
+    # Entrypoint propio: clona si hace falta y despues le pasa el control al
+    # entrypoint de la imagen oficial.
+    entrypoint: ["/bin/sh", "/iniciar-replica.sh"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARIO_HOST: db
+      PRIMARIO_PUERTO: 5432
+      REPLICACION_USER: ${REPLICACION_USER:-replicador}
+      REPLICACION_PASSWORD: ${REPLICACION_PASSWORD:?falta REPLICACION_PASSWORD en el .env}
+      RANURA: ${REPLICACION_RANURA:-replica_1}
+    volumes:
+      - ../postgres/iniciar-replica.sh:/iniciar-replica.sh:ro
+      - pgdata_replica:/var/lib/postgresql/data
+    # Puerto propio para poder consultarla y comprobar que lee pero no escribe.
+    ports:
+      - "127.0.0.1:${DB_REPLICA_PORT_HOST:-5434}:5432"
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # En una replica pg_isready devuelve 0 igual que en un primario: lo que
+      # dice es que acepta conexiones, no que pueda escribir.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # La primera corrida clona cuatro gigas. Sin este margen, Docker la mata
+      # a mitad de la copia y vuelve a empezar para siempre.
+      start_period: 600s
+
+  # ---------------------------------------------------------------------------
+  # Exportador de la replica (punto 10, tarea E10-04). Sin esto el panel de
+  # replicacion siempre decia 0: Prometheus solo consultaba al primario, que
+  # por definicion responde pg_replication_is_replica = 0.
+  #
+  # Perfil "replica" porque sin replica no tiene a quien consultar.
+  # ---------------------------------------------------------------------------
+  postgres-exporter-replica:
+    profiles: ["replica"]
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: restoya_postgres_exporter_replica
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_URI: "db-replica:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_USER: ${DB_USER}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+      PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1"
+    networks:
+      - interna
+    depends_on:
+      - db-replica
+
+  pgadmin:
+    image: dpage/pgadmin4:9.8
+    container_name: restoya_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_DISABLE_POSTFIX: "True"
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      # Deja la conexion a la base ya cargada: no hay que registrarla a mano.
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:16-alpine
+    container_name: restoya_backup
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      INTERVALO_SEGUNDOS: ${BACKUP_INTERVALO:-3600}
+      RETENER: ${BACKUP_RETENER:-7}
+    volumes:
+      - ./backups:/backups
+      - ../postgres/backup.sh:/backup.sh:ro
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --- Aplicacion (punto 7) ---------------------------------------------
+  # Se definen aparte para que queden claros los dos perfiles: el stack de
+  # datos solo (db, pgadmin, backup) sirve para desarrollar con el backend
+  # fuera del contenedor; con "--profile app" corre todo adentro.
+
+  backend:
+    profiles: ["app"]
+    build:
+      context: ../../backend
+    image: restoya-backend:local
+    container_name: restoya_backend
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # El host es el nombre del servicio: se habla por la red interna.
+      DB_HOST: db
+      DB_PORT: 5432
+      # Lecturas historicas del tablero contra la replica (punto 6). Si el
+      # perfil "replica" no esta levantado, el nombre no resuelve y la
+      # aplicacion cae sola al primario: no hace falta tocar nada.
+      DB_REPLICA_HOST: ${DB_REPLICA_HOST:-db-replica}
+      DB_REPLICA_PORT: 5432
+      DB_DIALECT: postgres
+      # El arranque no toca el esquema. Ver docs/07-optimizacion-sql.md:
+      # sync({alter:true}) recreaba las claves foraneas en cada arranque.
+      DB_SYNC: ${DB_SYNC:-none}
+      DB_SEED: ${DB_SEED:-true}
+      # Seguridad (punto 14). Lista exacta de origenes, no subcadenas.
+      CORS_ORIGENES: ${CORS_ORIGENES:-http://localhost:4200,http://localhost:8080}
+      LIMITE_LOGIN: ${LIMITE_LOGIN:-10}
+      LIMITE_API: ${LIMITE_API:-300}
+      LIMITE_CHATBOT: ${LIMITE_CHATBOT:-10}
+      # La documentacion no se sirve salvo que se pida, y pide clave.
+      SWAGGER_HABILITADO: ${SWAGGER_HABILITADO:-false}
+      SWAGGER_USER: ${SWAGGER_USER:-}
+      SWAGGER_PASSWORD: ${SWAGGER_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_PASS: ${GMAIL_PASS:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    # Sin "ports": el backend no se expone al host. Solo lo alcanza nginx
+    # por la red interna. Es el punto 9.5 cumplido por diseno.
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ../../frontend
+    image: restoya-frontend:local
+    container_name: restoya_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    networks:
+      - interna
+    depends_on:
+      - backend
+
+
+  # ---------------------------------------------------------------------------
+  # Monitoreo (punto 10). Perfil aparte: el stack de datos y la aplicacion se
+  # levantan sin esto, y esto se levanta sin tocar aquello.
+  #
+  #   docker compose --profile app --profile monitoreo up -d
+  #
+  # De los seis servicios, solo tres publican puerto al host, y los tres a
+  # 127.0.0.1. Los tres exportadores no publican nada: los consulta Prometheus
+  # por la red interna y no tienen por que ser alcanzables desde afuera.
+  # ---------------------------------------------------------------------------
+
+  prometheus:
+    profiles: ["monitoreo"]
+    image: prom/prometheus:v3.1.0
+    container_name: restoya_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Cuanto tiempo se guardan las mediciones. Quince dias es el valor por
+      # defecto y alcanza de sobra para el TP; el limite de tamano esta para
+      # que no se coma el disco si alguien lo deja corriendo.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      # Permite recargar la configuracion sin reiniciar:
+      #   curl -X POST http://127.0.0.1:9090/-/reload
+      - --web.enable-lifecycle
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/reglas:/etc/prometheus/reglas:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - interna
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  alertmanager:
+    profiles: ["monitoreo"]
+    image: prom/alertmanager:v0.27.0
+    container_name: restoya_alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ../prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # El secreto que comparte con el webhook de n8n (punto 13). Lo genera
+      # preparar-n8n.sh y esta en el .gitignore: alertmanager.yml lo nombra por
+      # credentials_file justamente para no tenerlo escrito adentro.
+      - ../prometheus/.token-alertas:/etc/alertmanager/.token-alertas:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - interna
+
+  # Metricas del sistema operativo: CPU, memoria, disco y red.
+  #
+  # OJO con lo que mide. En Docker Desktop sobre Windows, el "sistema" que ve
+  # este exportador es la maquina virtual de WSL2, no Windows. Los numeros son
+  # reales y sirven, pero no son los del Administrador de tareas, y conviene
+  # decirlo antes de que lo pregunten en la defensa.
+  node-exporter:
+    profiles: ["monitoreo"]
+    image: prom/node-exporter:v1.8.2
+    container_name: restoya_node_exporter
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - interna
+
+  # Metricas por contenedor: CPU, memoria, red y reinicios.
+  # Necesita privilegios y el socket de Docker porque lee el estado del
+  # demonio. Es el servicio con mas permisos de todo el proyecto, y por eso no
+  # publica ningun puerto.
+  cadvisor:
+    profiles: ["monitoreo"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: restoya_cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - interna
+
+  # Metricas de PostgreSQL: conexiones, transacciones, tamano, bloqueos y
+  # aciertos de cache.
+  postgres-exporter:
+    profiles: ["monitoreo"]
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: restoya_postgres_exporter
+    restart: unless-stopped
+    environment:
+      # Se usan las tres variables separadas y no una URL completa a proposito:
+      # una contrasena con @ o : rompe la URL de forma silenciosa y el
+      # exportador arranca igual, sin metricas y sin error claro.
+      DATA_SOURCE_URI: "db:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_USER: ${DB_USER}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+      PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1"
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Receptor de las alertas. Acepta el POST de Alertmanager, lo deja escrito
+  # en su registro y responde 204. Es la evidencia de E10-06.
+  # Cuando exista el flujo de n8n (punto 13), se cambia la URL en
+  # alertmanager.yml y este servicio se borra.
+  receptor-alertas:
+    profiles: ["monitoreo"]
+    image: nginx:1.29-alpine
+    container_name: restoya_receptor_alertas
+    restart: unless-stopped
+    volumes:
+      - ../prometheus/receptor-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - interna
+
+  grafana:
+    profiles: ["monitoreo"]
+    image: grafana/grafana:11.4.0
+    container_name: restoya_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?falta GRAFANA_PASSWORD en el .env}
+      # Nadie se crea una cuenta solo.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Grafana manda estadisticas de uso y consulta si hay version nueva.
+      # Las dos cosas salen a Internet desde un servicio interno: se apagan.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      # La fuente de datos y el tablero vienen del repositorio, no se cargan a
+      # mano por la interfaz. Asi se levantan igual en cualquier maquina y se
+      # revisan en un pull request como cualquier otro archivo.
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    networks:
+      - interna
+    depends_on:
+      - prometheus
+
+
+  # ===========================================================================
+  # PUNTO 11 — Gestion de incidencias con MantisBT.
+  #
+  #   docker compose --profile incidencias up -d
+  #
+  # Por que MariaDB y no el PostgreSQL que ya esta: a proposito. Mantis es la
+  # herramienta donde se anotan los problemas DE la aplicacion. Si compartiera
+  # el motor con la aplicacion, un problema de ese motor se llevaria puesto el
+  # lugar donde hay que anotarlo. Volumen propio, red propia, motor propio.
+  # ===========================================================================
+  mantis-db:
+    profiles: ["incidencias"]
+    image: mariadb:11.4
+    container_name: restoya_mantis_db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MANTIS_DB_ROOT_PASSWORD:?falta MANTIS_DB_ROOT_PASSWORD en el .env}
+      MARIADB_DATABASE: incidencias
+      MARIADB_USER: mantis
+      MARIADB_PASSWORD: ${MANTIS_DB_PASSWORD:?falta MANTIS_DB_PASSWORD en el .env}
+    volumes:
+      - mantis_db:/var/lib/mysql
+    networks:
+      - incidencias
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mantis:
+    profiles: ["incidencias"]
+    image: xlrl/mantisbt:2.28.4
+    container_name: restoya_mantis
+    restart: unless-stopped
+    environment:
+      MANTIS_DB_PASSWORD: ${MANTIS_DB_PASSWORD}
+      MANTIS_SALT: ${MANTIS_SALT:?falta MANTIS_SALT en el .env}
+      MANTIS_URL: http://localhost:${MANTIS_PORT:-8089}/
+      # La carpeta admin/ de Mantis trae el instalador y las herramientas de
+      # mantenimiento: con ella publicada, cualquiera que llegue al puerto
+      # puede reinstalar. El entrypoint de la imagen la esconde cuando esto
+      # vale 0, que es el valor normal. Se enciende SOLO para instalar el
+      # esquema la primera vez (ver docs/12-incidencias.md) y se vuelve a 0.
+      MANTIS_ENABLE_ADMIN: ${MANTIS_ENABLE_ADMIN:-0}
+      MANTIS_TIMEZONE: America/Argentina/Jujuy
+    volumes:
+      # La configuracion sale del repositorio. Si viviera solo adentro del
+      # contenedor, nadie mas podria reproducir esta instalacion.
+      - ../incidencias/config_inc.php:/var/www/html/config/config_inc.php:ro
+    ports:
+      - "127.0.0.1:${MANTIS_PORT:-8089}:80"
+    networks:
+      - incidencias
+    depends_on:
+      mantis-db:
+        condition: service_healthy
+
+  mantis-mail:
+    profiles: ["incidencias"]
+    image: axllent/mailpit:v1.21
+    container_name: restoya_mantis_mail
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+    ports:
+      # Solo la interfaz web del buzon. El puerto 1025 (SMTP) queda en la red
+      # interna: un SMTP abierto al host es un relay de correo esperando que
+      # alguien lo encuentre.
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+    networks:
+      - incidencias
+
+  # ===========================================================================
+  # PUNTO 12 — Gestion documental con Nextcloud.
+  #
+  #   docker compose --profile documental up -d
+  #
+  # Base propia por la misma razon que Mantis. Redis no es decorativo: sin el,
+  # Nextcloud usa bloqueo de archivos sobre la base y con dos personas
+  # subiendo a la vez tira "file is locked".
+  # ===========================================================================
+  nextcloud-db:
+    profiles: ["documental"]
+    image: postgres:16-alpine
+    container_name: restoya_nextcloud_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?falta NEXTCLOUD_DB_PASSWORD en el .env}
+    volumes:
+      - nextcloud_db:/var/lib/postgresql/data
+    networks:
+      - documental
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud -d nextcloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nextcloud-redis:
+    profiles: ["documental"]
+    image: redis:7-alpine
+    container_name: restoya_nextcloud_redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - documental
+
+  nextcloud:
+    profiles: ["documental"]
+    image: nextcloud:30-apache
+    container_name: restoya_nextcloud
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: nextcloud-db
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD}
+      REDIS_HOST: nextcloud-redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?falta NEXTCLOUD_ADMIN_PASSWORD en el .env}
+      # Sin esto Nextcloud responde "Access through untrusted domain" y no
+      # sirve ni la pantalla de inicio.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
+      OVERWRITEPROTOCOL: http
+    volumes:
+      - nextcloud_datos:/var/www/html
+    ports:
+      - "127.0.0.1:${NEXTCLOUD_PORT:-8081}:80"
+    networks:
+      - documental
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+
+  # ===========================================================================
+  # PUNTO 13 — Automatizacion con n8n.
+  #
+  #   docker compose --profile automatizacion up -d
+  #
+  # n8n se conecta a casi todo lo demas, asi que esta en las tres redes. Es el
+  # servicio con mas alcance del proyecto y por eso el que mas importa tener
+  # cerrado: no publica puerto fuera de 127.0.0.1 y exige usuario y clave.
+  # ===========================================================================
+  n8n-db:
+    profiles: ["automatizacion"]
+    image: postgres:16-alpine
+    container_name: restoya_n8n_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${N8N_DB_PASSWORD:?falta N8N_DB_PASSWORD en el .env}
+    volumes:
+      - n8n_db:/var/lib/postgresql/data
+    networks:
+      - automatizacion
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  n8n:
+    profiles: ["automatizacion"]
+    image: n8nio/n8n:1.70.1
+    container_name: restoya_n8n
+    restart: unless-stopped
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-db
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
+      # La interfaz de administracion pide usuario y clave (requisito de
+      # seguridad del punto 13).
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?falta N8N_PASSWORD en el .env}
+      # Clave con la que n8n cifra las credenciales guardadas. Si cambia, las
+      # credenciales existentes dejan de poder descifrarse: por eso va al .env
+      # y no se genera al vuelo en cada arranque.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?falta N8N_ENCRYPTION_KEY en el .env}
+      GENERIC_TIMEZONE: America/Argentina/Jujuy
+      # El flujo F03 sube su informe a Nextcloud como esta cuenta. Sin la
+      # variable, la ruta de WebDAV queda cortada (.../files//RestoYa/...).
+      NEXTCLOUD_USUARIO_BOT: automatizacion
+      TZ: America/Argentina/Jujuy
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      WEBHOOK_URL: http://localhost:${N8N_PORT:-5678}/
+    volumes:
+      - n8n_datos:/home/node/.n8n
+      # Los scripts que los flujos ejecutan en el host (copias, verificacion).
+      - ../automatizacion/scripts:/scripts:ro
+      # Las copias de seguridad, SOLO LECTURA. El flujo F02 las revisa; no
+      # tiene por que poder borrarlas ni escribirlas. Sin este montaje, F02 no
+      # ve ninguna copia y abre una incidencia falsa cada noche.
+      - ./backups:/copias:ro
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    networks:
+      - automatizacion
+      - interna
+      - incidencias
+      - documental
+    depends_on:
+      n8n-db:
+        condition: service_healthy
+
+networks:
+  interna:
+    name: restoya_interna
+    driver: bridge
+  # Una red por herramienta. Mantis no tiene por que poder hablarle a la base
+  # de la aplicacion, ni Nextcloud a Mantis. El unico que cruza es n8n, que
+  # para eso esta.
+  incidencias:
+    name: restoya_incidencias
+    driver: bridge
+  documental:
+    name: restoya_documental
+    driver: bridge
+  automatizacion:
+    name: restoya_automatizacion
+    driver: bridge
+
+volumes:
+  # Volumen creado antes de existir este compose. Se declara externo para no
+  # perder los datos que ya tenia.
+  pgdata:
+    external: true
+    name: restoya_pgdata
+  pgadmin_data:
+    name: restoya_pgadmin_data
+  pgdata_replica:
+    name: restoya_pgdata_replica
+  prometheus_data:
+    name: restoya_prometheus_data
+  alertmanager_data:
+    name: restoya_alertmanager_data
+  grafana_data:
+    name: restoya_grafana_data
+  mantis_db:
+    name: restoya_mantis_db
+  nextcloud_db:
+    name: restoya_nextcloud_db
+  nextcloud_datos:
+    name: restoya_nextcloud_datos
+  n8n_db:
+    name: restoya_n8n_db
+  n8n_datos:
+    name: restoya_n8n_datos
+

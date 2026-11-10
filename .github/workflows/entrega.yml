@@ -1,0 +1,165 @@
+# Entrega continua (punto 8): construir, escanear, publicar y desplegar.
+#
+# Separado de ci.yml a proposito. ci.yml valida y no publica nada; este
+# publica, y por eso corre SOLO si ci.yml termino bien y solo desde develop o
+# main. Un archivo que puede escribir en un registro no debe dispararse con
+# cada rama de trabajo.
+#
+# Registro: GitHub Container Registry (ghcr.io). Se eligio sobre Docker Hub
+# porque la autenticacion sale del propio GITHUB_TOKEN de la corrida: no hay
+# que guardar una contrasena de Docker Hub como secreto, con lo cual hay un
+# secreto menos que se pueda filtrar. El token vive lo que dura la corrida.
+
+name: Entrega
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, develop]
+  workflow_dispatch:
+
+# Minimo indispensable: leer el codigo y escribir paquetes. Nada de
+# contents: write, nada de permisos sobre issues o pull requests.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRO: ghcr.io
+
+jobs:
+  publicar:
+    name: Construir, escanear y publicar
+    runs-on: ubuntu-24.04
+    # El disparador workflow_run salta tanto si CI paso como si fallo. Esta
+    # condicion es la que impide publicar una imagen que no paso las
+    # validaciones: sin ella el pipeline no serviria de nada.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    strategy:
+      # Si el backend falla, igual queremos saber si el frontend estaba bien.
+      fail-fast: false
+      matrix:
+        include:
+          - componente: backend
+            contexto: ./backend
+          - componente: frontend
+            contexto: ./frontend
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_dispatch no trae SHA del evento; en ese caso se usa el
+          # de la rama. Asi la etiqueta de la imagen siempre apunta a un
+          # commit concreto y no a "lo ultimo que haya".
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Entrar al registro
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRO }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Minusculas obligatorias: ghcr.io rechaza nombres con mayusculas y el
+      # usuario de GitHub puede tenerlas.
+      - name: Calcular el nombre de la imagen
+        id: nombre
+        run: |
+          set -eu
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "imagen=${{ env.REGISTRO }}/$repo/${{ matrix.componente }}" >> "$GITHUB_OUTPUT"
+
+      - name: Construir (sin publicar todavia)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.contexto }}
+          push: false
+          load: true
+          tags: ${{ steps.nombre.outputs.imagen }}:prueba
+          cache-from: type=gha,scope=${{ matrix.componente }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.componente }}
+
+      # Se escanea ANTES de publicar. Publicar y escanear despues significa
+      # que la imagen con la vulnerabilidad ya esta disponible para que
+      # alguien la baje.
+      - name: Escanear con Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.nombre.outputs.imagen }}:prueba
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.contexto }}
+          push: true
+          # Tres etiquetas: el SHA para poder volver a una version exacta
+          # (es lo que usa el rollback), la rama para seguir la ultima de cada
+          # una, y "latest" solo desde main.
+          tags: |
+            ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_sha || github.sha }}
+            ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_branch || github.ref_name }}
+            ${{ github.event.workflow_run.head_branch == 'main' && format('{0}:latest', steps.nombre.outputs.imagen) || '' }}
+          cache-from: type=gha,scope=${{ matrix.componente }}
+
+      - name: Resumen
+        run: |
+          {
+            echo "### ${{ matrix.componente }}"
+            echo ""
+            echo "Imagen: \`${{ steps.nombre.outputs.imagen }}\`"
+            echo ""
+            echo "Etiqueta exacta (la que usa el rollback):"
+            echo "\`${{ github.event.workflow_run.head_sha || github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Despliegue.
+  #
+  # La aplicacion no corre en un servidor alquilado: corre en la maquina del
+  # equipo, que es lo que pide el punto 9 (servidor local con tunel). Un
+  # runner alojado por GitHub no puede llegar hasta ahi, asi que el despliegue
+  # usa un runner AUTOALOJADO en esa misma maquina, con la etiqueta
+  # "restoya-produccion".
+  #
+  # Mientras ese runner no este registrado, este trabajo queda en espera y no
+  # rompe nada: los dos de arriba ya publicaron las imagenes.
+  # El procedimiento de registro esta en docs/11-cicd.md.
+  # ---------------------------------------------------------------------------
+  desplegar:
+    name: Desplegar en el servidor del equipo
+    needs: publicar
+    # Solo desde main. Una ejecucion manual (workflow_dispatch) publica las
+    # imagenes pero NO despliega: sirve para probar la construccion y el
+    # escaneo desde una rama de trabajo sin tocar lo que esta en servicio.
+    if: github.event.workflow_run.head_branch == 'main'
+    runs-on: [self-hosted, restoya-produccion]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Entrar al registro
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRO }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Toda la logica vive en un script del repositorio y no en el YAML: asi
+      # se puede probar a mano en la maquina, que es como se verifico, y no
+      # solo "cuando corra el pipeline".
+      - name: Desplegar con verificacion y vuelta atras
+        env:
+          VERSION: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: ./infra/despliegue/desplegar.sh "$VERSION"

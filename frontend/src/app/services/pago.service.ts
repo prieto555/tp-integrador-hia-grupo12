@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -6,7 +7,7 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class PagoService {
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/pagos';
+  private apiUrl = environment.apiUrl + '/pagos';
 
   constructor(private http: HttpClient) { }
 

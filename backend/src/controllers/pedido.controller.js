@@ -1,6 +1,13 @@
 const Pedido = require("../models/pedido.model");
 const Mesa = require("../models/mesa.model");
 
+// Techo de filas de cada listado. Sin un techo, un solo GET tumba el
+// proceso: ver el comentario en obtenerPedidos.
+const LIMITE_PEDIDOS = 100;
+const LIMITE_PEDIDOS_MAX = 500;
+const LIMITE_COCINA = 100;
+const LIMITE_COCINA_MAX = 300;
+
 // crearPedido (ahora soporta Detalles y tipoPedido)
 const crearPedido = async (req, res) => {
   const { idMesa, tipoPedido, detalles, telefonoCliente, usuarioId } = req.body;
@@ -66,15 +73,34 @@ const crearPedido = async (req, res) => {
 // obtenerPedidos 
 const obtenerPedidos = async (req, res) => {
   try {
+    // Antes esto no tenia limite. Con seis millones de pedidos, cada uno
+    // con sus detalles y sus productos, Sequelize arma un objeto por fila
+    // y el proceso muere con "JavaScript heap out of memory". Comprobado:
+    // el contenedor del backend se reinicio solo.
+    //
+    // Ningun indice arregla esto. La consulta puede tardar un milisegundo
+    // y el servidor morirse igual: el problema es cuantas filas devuelve.
+    //
+    // La respuesta sigue siendo un arreglo porque el frontend espera
+    // any[]. Devolver metadatos de paginacion es la tarea E5-10.
+    const limite = Math.min(
+      parseInt(req.query.limite, 10) || LIMITE_PEDIDOS,
+      LIMITE_PEDIDOS_MAX
+    );
+    const pagina = Math.max(parseInt(req.query.pagina, 10) || 1, 1);
+
     const pedidos = await Pedido.findAll({
       include: [
         { model: Mesa, as: "mesa" },
-        { 
-          model: require('../models/detallePedido.model'), 
+        {
+          model: require('../models/detallePedido.model'),
           as: "detalles",
           include: ["producto"]
         }
       ],
+      order: [["idPedido", "DESC"]],
+      limit: limite,
+      offset: (pagina - 1) * limite,
     });
     res.json(pedidos);
   } catch (error) {
@@ -117,7 +143,13 @@ const obtenerPedidosCocina = async (req, res) => {
           }]
         }
       ],
-      order: [['fechaCreacion', 'ASC']]
+      order: [['fechaCreacion', 'ASC']],
+      // La cocina muestra lo que esta en preparacion, no el historico.
+      // Sin limite son 1,33 millones de pedidos y el proceso se muere.
+      limit: Math.min(
+        parseInt(req.query.limite, 10) || LIMITE_COCINA,
+        LIMITE_COCINA_MAX
+      ),
     });
 
     // Sequelize inner join (where on include) might filter out orders completely if they only have drinks.

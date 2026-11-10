@@ -1,3 +1,4 @@
+import { environment } from '../../../environments/environment';
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -128,10 +129,10 @@ export class CajaComponent implements OnInit {
   }
 
   descargarPDF(idCaja: number): void {
-    window.open(`https://proybackendgrupo13-9bp9.onrender.com/api/reportes/caja/${idCaja}/pdf`, '_blank');
+    window.open(`${environment.apiUrl}/reportes/caja/${idCaja}/pdf`, '_blank');
   }
 
   descargarExcel(idCaja: number): void {
-    window.open(`https://proybackendgrupo13-9bp9.onrender.com/api/reportes/caja/${idCaja}/excel`, '_blank');
+    window.open(`${environment.apiUrl}/reportes/caja/${idCaja}/excel`, '_blank');
   }
 }

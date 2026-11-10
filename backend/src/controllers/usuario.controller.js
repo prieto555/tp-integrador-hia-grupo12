@@ -50,6 +50,12 @@ usuarioCtrl.createUsuario = async (req, res) => {
     try {
         const { email, password, rolId } = req.body;
 
+        // Esta verificacion se queda, porque da un mensaje claro en el caso
+        // normal. Lo que NO puede quedarse es que sea la unica: entre el
+        // findOne y el create entra otra alta con el mismo correo, y entonces
+        // quedan dos cuentas iguales y el inicio de sesion se rompe, porque
+        // findOne devuelve una sola. El que lo impide de verdad es el UNIQUE
+        // de la base; esto solo evita el error feo cuando no hay carrera.
         const existe = await Usuario.findOne({ where: { email } });
         if (existe) {
             return res.status(400).json({ status: '0', msg: 'Ya existe el email.' });
@@ -65,6 +71,13 @@ usuarioCtrl.createUsuario = async (req, res) => {
 
         res.json({ status: '1', msg: 'Usuario guardado exitosamente.' });
     } catch (error) {
+        // Si dos altas con el mismo correo llegan a la vez, la que pierde la
+        // carrera choca contra el UNIQUE de la base. Eso es un dato invalido
+        // del cliente, no una falla del servidor: corresponde 400 con un
+        // mensaje claro, no un 500 generico.
+        if (error && error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ status: '0', msg: 'Ya existe el email.' });
+        }
         console.error(error);
         res.status(400).json({ status: '0', msg: 'Error procesando operacion.' });
     }
