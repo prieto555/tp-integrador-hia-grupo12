@@ -229,7 +229,15 @@ jobs:
         run: |
           set -eu
           for i in $(seq 1 90); do
-            codigo=$(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8080/api/productos || echo 000)
+            # OJO con la forma de capturar el codigo. Escrito como
+            #   codigo=$(curl ... -w %{http_code} || echo 000)
+            # cuando curl no puede conectarse imprime 000 por -w Y ADEMAS
+            # devuelve error, asi que corre el echo y agrega otro: codigo
+            # queda valiendo dos veces 000, que no coincide con ningun patron
+            # del case y cae en *), que es la rama de exito. El bucle se
+            # cortaba en el primer intento, justo cuando el backend todavia
+            # no estaba. Hay que asignar en el ||, no encadenar la salida.
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/productos) || codigo=000
             case "$codigo" in
               000|502|503|504)
                 if [ "$i" = 90 ]; then
