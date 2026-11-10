@@ -30,3 +30,10 @@ desktop.ini
 # --- Logs ---
 *.log
 npm-debug.log*
+
+# Punto 11: token de API de Mantis, emitido por preparar-mantis.sh
+infra/incidencias/.token-api
+
+# Punto 13: secreto que comparten Alertmanager y el webhook de n8n,
+# generado por preparar-n8n.sh
+infra/prometheus/.token-alertas

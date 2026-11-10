@@ -154,6 +154,14 @@ caída, el primario acumula WAL indefinidamente hasta llenar el disco**. Es un
 problema real, no teórico, y la mitigación es vigilar
 `pg_replication_slots.active` — está en el tablero de Grafana.
 
+La contracara quedó demostrada sin buscarlo: el 10/11 el motor de Docker de la
+máquina se murió y los dos nodos estuvieron **cuatro horas** apagados. Al
+volver, la réplica **retomó el streaming sola, sin volver a clonar**, y en
+`pg_stat_replication` quedó en `streaming` con **0 bytes** atrás. Eso es
+precisamente lo que la ranura compra: el primario no recicló el WAL de esas
+cuatro horas, así que la réplica pudo alcanzarlo. Sin ranura, cuatro horas de
+WAL reciclado habrían obligado a clonar los 4,4 GB de nuevo.
+
 > **Aviso de seguridad.** `pg_basebackup -R` deja la contraseña escrita en
 > `primary_conninfo`, dentro de `postgresql.auto.conf`, en el volumen. Es como
 > funciona la herramienta. No está en el repositorio, pero conviene saberlo
@@ -267,6 +275,84 @@ El procedimiento completo está automatizado en
 [`infra/postgres/simular-caida.sh`](../infra/postgres/simular-caida.sh), que
 mide cada paso.
 
+### La corrida medida
+
+Salida de `SI=1 ./infra/postgres/simular-caida.sh` del **10/11/2026, 12:15**,
+contra el primario cargado con los 6.000.000 de pedidos:
+
+| Qué | Medido |
+|---|---|
+| Retraso al momento del corte | `streaming`, `async`, **0 bytes** atrás |
+| LSN del primario y de la réplica | `3/45001260` en los dos |
+| Promoción (`pg_ctl promote`) | **1 s** |
+| Del corte a tener un nodo aceptando escrituras | **3 s** |
+| Línea de tiempo | **1 → 2** |
+| Filas en el nodo promovido | 6.000.000 pedidos, 6.000.000 pagos |
+| Fila escrita justo antes del corte | sobrevivió |
+
+Los pasos que lo prueban, textuales:
+
+```
+=== 2. Escribir algo justo antes de cortar ===
+Insertada la mesa 902 en el primario (caida-121533).
+En la replica: 902 / LIBRE
+LSN primario: 3/45001260
+LSN replica : 3/45001260
+Diferencia  : 0 bytes
+
+=== 3. Cortar el primario ===
+Primario detenido a las 12:15:38.
+
+=== 4. Promover la replica ===
+La replica sigue viva y sigue leyendo, pero no acepta escrituras:
+     ERROR:  cannot execute INSERT in a read-only transaction
+
+Promoviendo...
+     waiting for server to promote.... done
+     server promoted
+
+Promovida en 1 s (desde el corte: 3 s).
+en recuperacion     : f
+linea de tiempo     : 2
+
+=== 5. No se perdio nada, y ahora si acepta escrituras ===
+La mesa 902, escrita en el primario antes del corte:
+     902 / LIBRE
+
+Conteos (tienen que ser los mismos que antes del corte):
+     pagos|6000000
+     pedidos|6000000
+
+Escritura en el nodo promovido:
+     903 escrita en el nodo promovido
+```
+
+**Cuidado con leer esos 3 segundos como el tiempo de recuperación.** Son el
+tiempo de la *promoción*, que es la parte automatizada. Lo que falta sumarle es
+el tiempo que tarda **una persona** en enterarse y correr el comando, que es
+exactamente lo que esta arquitectura no resuelve: con el primario caído a las
+12:15:38, la regla de Prometheus recién avisa a las **12:17:08**. El número
+honesto de indisponibilidad de escrituras es «90 segundos más lo que tarde
+quien esté de guardia», no 3 segundos.
+
+#### Dos detalles del entorno que costaron dos corridas falladas
+
+Quedan resueltos dentro del script para que no se repitan, pero conviene
+saberlos porque aparecen en cualquier PostgreSQL en Docker sobre Windows:
+
+- `pg_ctl` **se niega a correr como root** (*cannot be run as root*), y
+  `docker exec` entra como root. Va `-u postgres`.
+- Git Bash reescribe los argumentos que parecen rutas absolutas: `-D
+  /var/lib/postgresql/data` le llega a `pg_ctl` como `C:/Program
+  Files/Git/var/lib/postgresql/data`. Se evita con `export MSYS_NO_PATHCONV=1`.
+
+Hubo además una tercera corrida fallada por un error del guion y no del
+entorno: el `INSERT` de control usaba una columna `numero` que la tabla
+`mesas` no tiene — se llama `numMesa` y el modelo no lleva columnas de fecha.
+El `set -e` cortó antes de tocar el primario, así que no hizo daño, pero es el
+recordatorio de que un guion escrito contra un esquema supuesto no es un guion
+probado.
+
 ### Cómo se detecta la falla
 
 Tres formas, y **ninguna de las tres reacciona sola**:
@@ -283,7 +369,9 @@ entre lo que hay y *failover* automático.
 ### Cómo se promueve
 
 ```bash
-docker exec restoya_db_replica pg_ctl promote -D /var/lib/postgresql/data
+# -u postgres no es decorativo: pg_ctl se niega a correr como root y
+# docker exec entra como root.
+docker exec -u postgres restoya_db_replica pg_ctl promote -D /var/lib/postgresql/data
 ```
 
 La prueba de que fue una promoción real y no un reinicio es que **la línea de
@@ -433,8 +521,12 @@ Sin maquillar:
 7. **La réplica no sirve para descargar escrituras.** Sólo lecturas. Si el
    cuello de botella fueran las escrituras, esto no ayudaría en nada: haría
    falta particionar o fragmentar, que es otro problema.
-8. **La prueba de caída todavía no se corrió de punta a punta** con los
-   números medidos: el entorno de Docker de la máquina dejó de arrancar
-   después de cerrar el punto E6-01. El procedimiento está escrito y
-   automatizado en `simular-caida.sh`; lo que falta es la corrida y pegar acá
-   su salida. **Esto no está hecho y no se presenta como si lo estuviera.**
+8. **La caída que se probó es la amable.** `docker stop` manda `SIGTERM` y
+   PostgreSQL hace un apagado ordenado, que es el caso fácil. No se probó
+   `kill -9` ni un corte de energía, donde el primario puede dejar el WAL a
+   medio escribir. La promoción de la réplica funcionaría igual —no depende del
+   primario—, pero el nodo viejo podría necesitar `pg_rewind` o un clonado
+   completo antes de volver al par.
+9. **Después de promover queda un nodo solo.** El par no se rearma solo: hay
+   que borrar el volumen de la réplica y clonar de cero (**48 s** medidos).
+   Mientras eso pasa, no hay copia en caliente.

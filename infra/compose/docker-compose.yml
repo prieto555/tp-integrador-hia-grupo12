@@ -294,6 +294,10 @@ services:
       - --storage.path=/alertmanager
     volumes:
       - ../prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # El secreto que comparte con el webhook de n8n (punto 13). Lo genera
+      # preparar-n8n.sh y esta en el .gitignore: alertmanager.yml lo nombra por
+      # credentials_file justamente para no tenerlo escrito adentro.
+      - ../prometheus/.token-alertas:/etc/alertmanager/.token-alertas:ro
       - alertmanager_data:/alertmanager
     ports:
       - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
@@ -445,7 +449,12 @@ services:
       MANTIS_DB_PASSWORD: ${MANTIS_DB_PASSWORD}
       MANTIS_SALT: ${MANTIS_SALT:?falta MANTIS_SALT en el .env}
       MANTIS_URL: http://localhost:${MANTIS_PORT:-8089}/
-      MANTIS_ENABLE_ADMIN: 0
+      # La carpeta admin/ de Mantis trae el instalador y las herramientas de
+      # mantenimiento: con ella publicada, cualquiera que llegue al puerto
+      # puede reinstalar. El entrypoint de la imagen la esconde cuando esto
+      # vale 0, que es el valor normal. Se enciende SOLO para instalar el
+      # esquema la primera vez (ver docs/12-incidencias.md) y se vuelve a 0.
+      MANTIS_ENABLE_ADMIN: ${MANTIS_ENABLE_ADMIN:-0}
       MANTIS_TIMEZONE: America/Argentina/Jujuy
     volumes:
       # La configuracion sale del repositorio. Si viviera solo adentro del
@@ -587,6 +596,9 @@ services:
       # y no se genera al vuelo en cada arranque.
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?falta N8N_ENCRYPTION_KEY en el .env}
       GENERIC_TIMEZONE: America/Argentina/Jujuy
+      # El flujo F03 sube su informe a Nextcloud como esta cuenta. Sin la
+      # variable, la ruta de WebDAV queda cortada (.../files//RestoYa/...).
+      NEXTCLOUD_USUARIO_BOT: automatizacion
       TZ: America/Argentina/Jujuy
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_RUNNERS_ENABLED: "true"
@@ -597,6 +609,10 @@ services:
       - n8n_datos:/home/node/.n8n
       # Los scripts que los flujos ejecutan en el host (copias, verificacion).
       - ../automatizacion/scripts:/scripts:ro
+      # Las copias de seguridad, SOLO LECTURA. El flujo F02 las revisa; no
+      # tiene por que poder borrarlas ni escribirlas. Sin este montaje, F02 no
+      # ve ninguna copia y abre una incidencia falsa cada noche.
+      - ./backups:/copias:ro
     ports:
       - "127.0.0.1:${N8N_PORT:-5678}:5678"
     networks:
