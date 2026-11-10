@@ -38,6 +38,33 @@ docker compose --profile app --profile monitoreo up -d --build
 | http://127.0.0.1:9090 | Prometheus |
 | http://127.0.0.1:9093 | Alertmanager |
 
+Las herramientas de los puntos 11, 12 y 13 tienen cada una su perfil, porque
+no hacen falta para programar y levantarlas todas junta son trece contenedores
+mas:
+
+| Perfil | Qué levanta | Dónde queda |
+|---|---|---|
+| `--profile replica` | Réplica de PostgreSQL + su exportador (punto 6) | `127.0.0.1:5434` |
+| `--profile incidencias` | MantisBT + MariaDB + Mailpit (punto 11) | [:8089](http://127.0.0.1:8089) y el buzón en [:8025](http://127.0.0.1:8025) |
+| `--profile documental` | Nextcloud + PostgreSQL + Redis (punto 12) | [:8081](http://127.0.0.1:8081) |
+| `--profile automatizacion` | n8n + PostgreSQL (punto 13) | [:5678](http://127.0.0.1:5678) |
+
+Cada una se prepara una sola vez:
+
+```bash
+./infra/incidencias/preparar-mantis.sh && node infra/incidencias/cargar-incidencias.js
+```
+
+```bash
+./infra/documental/preparar-nextcloud.sh
+```
+
+Los flujos de n8n se importan a mano desde su interfaz; está explicado en
+[`docs/14-automatizacion.md`](docs/14-automatizacion.md).
+
+**Todos los puertos salen sólo a `127.0.0.1`.** Desde otra máquina de la red
+no se llega a ninguno.
+
 Los perfiles son independientes: `up -d` solo levanta la base, pgAdmin y las
 copias; `--profile app` agrega la aplicación; `--profile monitoreo` agrega
 Prometheus, Grafana y los exportadores.
