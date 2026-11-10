@@ -1,0 +1,31 @@
+# Superposicion para desplegar (punto 8).
+#
+# Se usa junto al archivo principal:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.produccion.yml \
+#     --profile app up -d
+#
+# Lo unico que cambia es de donde salen las imagenes del backend y del
+# frontend: en vez de construirlas en la maquina, se bajan del registro, ya
+# construidas y ya escaneadas por el pipeline. Eso tiene dos consecuencias
+# que importan:
+#
+#   1. Lo que corre en produccion es EXACTAMENTE el mismo binario que paso
+#      las pruebas. Construir de nuevo en la maquina puede dar algo distinto
+#      (otra version de base, otra cache) aunque el codigo sea el mismo.
+#   2. Volver atras es cambiar una variable y levantar de nuevo, porque la
+#      version anterior sigue existiendo en el registro con su etiqueta.
+#
+# VERSION es el SHA del commit. No se usa "latest" a proposito: "latest" no
+# dice a que codigo corresponde y hace imposible volver a una version exacta.
+
+services:
+  backend:
+    build: !reset null
+    image: ghcr.io/${IMAGEN_PROPIETARIO:-prieto555}/tp-integrador-hia-grupo12/backend:${VERSION:?falta VERSION}
+    pull_policy: always
+
+  frontend:
+    build: !reset null
+    image: ghcr.io/${IMAGEN_PROPIETARIO:-prieto555}/tp-integrador-hia-grupo12/frontend:${VERSION:?falta VERSION}
+    pull_policy: always
