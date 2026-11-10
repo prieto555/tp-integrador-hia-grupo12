@@ -25,6 +25,17 @@ const authLimiter = rateLimit({
   message: "Demasiados intentos de inicio de sesión, intente de nuevo en 15 minutos."
 });
 
+// Metricas para Prometheus (punto 10). Va antes de las rutas para medirlas
+// todas, pero mide al terminar la peticion, que es cuando se sabe que ruta
+// matcheo y con que codigo se respondio.
+const { medirPeticiones, servirMetricas } = require('./src/middlewares/metricas.middleware');
+app.use(medirPeticiones);
+
+// /metrics NO va bajo /api a proposito: nginx solo hace de proxy de /api/,
+// asi que esta ruta no es alcanzable desde el navegador. Solo la ve
+// Prometheus, por la red interna de Docker.
+app.get('/metrics', servirMetricas);
+
 app.use(express.json());
 
 // Inyectamos nuestro Middleware Global de Auditoría

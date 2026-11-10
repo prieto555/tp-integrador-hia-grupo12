@@ -154,6 +154,170 @@ services:
     depends_on:
       - backend
 
+
+  # ---------------------------------------------------------------------------
+  # Monitoreo (punto 10). Perfil aparte: el stack de datos y la aplicacion se
+  # levantan sin esto, y esto se levanta sin tocar aquello.
+  #
+  #   docker compose --profile app --profile monitoreo up -d
+  #
+  # De los seis servicios, solo tres publican puerto al host, y los tres a
+  # 127.0.0.1. Los tres exportadores no publican nada: los consulta Prometheus
+  # por la red interna y no tienen por que ser alcanzables desde afuera.
+  # ---------------------------------------------------------------------------
+
+  prometheus:
+    profiles: ["monitoreo"]
+    image: prom/prometheus:v3.1.0
+    container_name: restoya_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Cuanto tiempo se guardan las mediciones. Quince dias es el valor por
+      # defecto y alcanza de sobra para el TP; el limite de tamano esta para
+      # que no se coma el disco si alguien lo deja corriendo.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      # Permite recargar la configuracion sin reiniciar:
+      #   curl -X POST http://127.0.0.1:9090/-/reload
+      - --web.enable-lifecycle
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/reglas:/etc/prometheus/reglas:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - interna
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  alertmanager:
+    profiles: ["monitoreo"]
+    image: prom/alertmanager:v0.27.0
+    container_name: restoya_alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ../prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    networks:
+      - interna
+
+  # Metricas del sistema operativo: CPU, memoria, disco y red.
+  #
+  # OJO con lo que mide. En Docker Desktop sobre Windows, el "sistema" que ve
+  # este exportador es la maquina virtual de WSL2, no Windows. Los numeros son
+  # reales y sirven, pero no son los del Administrador de tareas, y conviene
+  # decirlo antes de que lo pregunten en la defensa.
+  node-exporter:
+    profiles: ["monitoreo"]
+    image: prom/node-exporter:v1.8.2
+    container_name: restoya_node_exporter
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - interna
+
+  # Metricas por contenedor: CPU, memoria, red y reinicios.
+  # Necesita privilegios y el socket de Docker porque lee el estado del
+  # demonio. Es el servicio con mas permisos de todo el proyecto, y por eso no
+  # publica ningun puerto.
+  cadvisor:
+    profiles: ["monitoreo"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: restoya_cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - interna
+
+  # Metricas de PostgreSQL: conexiones, transacciones, tamano, bloqueos y
+  # aciertos de cache.
+  postgres-exporter:
+    profiles: ["monitoreo"]
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: restoya_postgres_exporter
+    restart: unless-stopped
+    environment:
+      # Se usan las tres variables separadas y no una URL completa a proposito:
+      # una contrasena con @ o : rompe la URL de forma silenciosa y el
+      # exportador arranca igual, sin metricas y sin error claro.
+      DATA_SOURCE_URI: "db:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_USER: ${DB_USER}
+      DATA_SOURCE_PASS: ${DB_PASSWORD}
+      PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1"
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Receptor de las alertas. Acepta el POST de Alertmanager, lo deja escrito
+  # en su registro y responde 204. Es la evidencia de E10-06.
+  # Cuando exista el flujo de n8n (punto 13), se cambia la URL en
+  # alertmanager.yml y este servicio se borra.
+  receptor-alertas:
+    profiles: ["monitoreo"]
+    image: nginx:1.27-alpine
+    container_name: restoya_receptor_alertas
+    restart: unless-stopped
+    volumes:
+      - ../prometheus/receptor-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - interna
+
+  grafana:
+    profiles: ["monitoreo"]
+    image: grafana/grafana:11.4.0
+    container_name: restoya_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?falta GRAFANA_PASSWORD en el .env}
+      # Nadie se crea una cuenta solo.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Grafana manda estadisticas de uso y consulta si hay version nueva.
+      # Las dos cosas salen a Internet desde un servicio interno: se apagan.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      # La fuente de datos y el tablero vienen del repositorio, no se cargan a
+      # mano por la interfaz. Asi se levantan igual en cualquier maquina y se
+      # revisan en un pull request como cualquier otro archivo.
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    networks:
+      - interna
+    depends_on:
+      - prometheus
+
 networks:
   interna:
     name: restoya_interna
@@ -167,4 +331,10 @@ volumes:
     name: restoya_pgdata
   pgadmin_data:
     name: restoya_pgadmin_data
+  prometheus_data:
+    name: restoya_prometheus_data
+  alertmanager_data:
+    name: restoya_alertmanager_data
+  grafana_data:
+    name: restoya_grafana_data
 

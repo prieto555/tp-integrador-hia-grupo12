@@ -1,0 +1,22 @@
+# Fuente de datos aprovisionada.
+#
+# Se declara en un archivo y no se carga a mano por la interfaz: asi el tablero
+# se levanta igual en cualquier maquina, y lo que se entrega es el archivo, no
+# una captura de pantalla de alguien configurandolo.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus-restoya
+    type: prometheus
+    access: proxy
+    # Nombre del servicio en la red interna, no localhost: Grafana corre en su
+    # propio contenedor.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Tiene que coincidir con scrape_interval de prometheus.yml, o los
+      # graficos muestran huecos donde no los hay.
+      timeInterval: 15s
