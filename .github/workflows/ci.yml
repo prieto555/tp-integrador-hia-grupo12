@@ -164,10 +164,14 @@ jobs:
         run: |
           set -eu
           cat > .env <<'FIN'
+          # pgAdmin rechaza los dominios reservados (.test, .invalid...) y se
+          # reinicia en bucle diciendo "does not appear to be a valid email
+          # address". Por eso example.com y no example.test, que seria lo
+          # correcto para datos de prueba segun el RFC 2606.
           DB_NAME=restoyadb
           DB_USER=restoya
           DB_PORT_HOST=5433
-          PGADMIN_EMAIL=ci@example.test
+          PGADMIN_EMAIL=ci@example.com
           PGADMIN_PORT=5050
           BACKUP_INTERVALO=86400
           BACKUP_RETENER=1
