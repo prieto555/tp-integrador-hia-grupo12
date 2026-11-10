@@ -11,18 +11,26 @@ La consigna pide *«al menos 10 incidencias reales o reproducibles del entorno
 de prueba, incluyendo al menos una relacionada con rendimiento y otra con
 seguridad»*.
 
-Hay **15**, y ninguna está inventada. Todas aparecieron trabajando los puntos
-4 a 14 de este mismo trabajo, todas tienen pasos para reproducirlas, y 14 de
-las 15 tienen un *commit* que las cierra.
+Hay **17**, y ninguna está inventada. Todas aparecieron trabajando los puntos
+4 a 14 de este mismo trabajo, todas tienen pasos para reproducirlas, y 15 de
+las 17 tienen un *commit* que las cierra.
+
+Las dos últimas, **INC-16** e **INC-17**, las encontró el propio *pipeline* del
+punto 8 en sus primeras corridas: un bucle de reinicio de pgAdmin que el
+entorno de la máquina venía disimulando, y que el proyecto **no se podía
+levantar de cero** porque nada creaba el volumen declarado como `external`.
+Ninguno de los dos es un error de código: son suposiciones sobre el entorno que
+nadie había escrito, y es exactamente para eso que sirve tener integración
+continua.
 
 | | Cantidad |
 |---|---|
-| Total | 15 |
+| Total | 17 |
 | De seguridad | 6 |
 | De rendimiento | 3 |
-| Cerradas con corrección verificada | 14 |
+| Cerradas con corrección verificada | 16 |
 | Abiertas | 1 (limitación del entorno, a propósito) |
-| Horas registradas | 25,5 |
+| Horas registradas | 27,0 |
 
 La lista completa, con descripción, pasos, notas, horas, *commit* y
 verificación, vive en
@@ -244,7 +252,7 @@ muestra qué haría sin escribir nada; con `--solo INC-07` carga una sola.
 ### Por qué un script y no a mano
 
 Cada incidencia lleva descripción, pasos, información adicional, una o dos
-notas, registro de horas y dos o tres cambios de estado. Son unas **120
+notas, registro de horas y dos o tres cambios de estado. Son unas **135
 operaciones**. A mano: una tarde, erratas garantizadas, y nada repetible si
 hay que rehacer el entorno.
 

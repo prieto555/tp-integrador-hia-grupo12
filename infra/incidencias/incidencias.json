@@ -10,15 +10,38 @@
     "que sigan abiertas se reasignan: eso es lo que corresponde, y no poner",
     "nombres de companeros en trabajo que no hicieron."
   ],
-
   "usuarios": [
-    { "usuario": "garamayo", "nombre": "Aramayo, Gerardo Leonel", "email": "garamayo@restoya.test", "acceso": "developer" },
-    { "usuario": "jarmella", "nombre": "Armella, Julian Enrique", "email": "jarmella@restoya.test", "acceso": "developer" },
-    { "usuario": "fcruz",    "nombre": "Cruz, Florencia Agustina", "email": "fcruz@restoya.test",   "acceso": "developer" },
-    { "usuario": "fpol",     "nombre": "Pol, Jaime Facundo",       "email": "fpol@restoya.test",    "acceso": "developer" },
-    { "usuario": "gprieto",  "nombre": "Prieto, Gabriel Arturo",   "email": "gprieto@restoya.test", "acceso": "manager" }
+    {
+      "usuario": "garamayo",
+      "nombre": "Aramayo, Gerardo Leonel",
+      "email": "garamayo@restoya.test",
+      "acceso": "developer"
+    },
+    {
+      "usuario": "jarmella",
+      "nombre": "Armella, Julian Enrique",
+      "email": "jarmella@restoya.test",
+      "acceso": "developer"
+    },
+    {
+      "usuario": "fcruz",
+      "nombre": "Cruz, Florencia Agustina",
+      "email": "fcruz@restoya.test",
+      "acceso": "developer"
+    },
+    {
+      "usuario": "fpol",
+      "nombre": "Pol, Jaime Facundo",
+      "email": "fpol@restoya.test",
+      "acceso": "developer"
+    },
+    {
+      "usuario": "gprieto",
+      "nombre": "Prieto, Gabriel Arturo",
+      "email": "gprieto@restoya.test",
+      "acceso": "manager"
+    }
   ],
-
   "categorias": [
     "Backend",
     "Frontend",
@@ -28,7 +51,6 @@
     "Monitoreo",
     "CI/CD"
   ],
-
   "incidencias": [
     {
       "ref": "INC-01",
@@ -39,7 +61,10 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["rendimiento", "punto-5"],
+      "etiquetas": [
+        "rendimiento",
+        "punto-5"
+      ],
       "descripcion": "La pantalla de cocina pide todos los pedidos sin ningun limite. Con la base de prueba cargada (1.330.000 pedidos en estado PENDIENTE o EN_PREPARACION) el proceso de Node supera el techo del monticulo de V8 (2240 MB) y muere. No es que la pantalla tarde: se cae la API COMPLETA, incluida la parte que no tiene nada que ver con cocina.",
       "pasos": "1. Cargar el conjunto de datos de prueba del punto 4 (6.000.000 de pedidos).\n2. Levantar el backend: docker compose --profile app up -d\n3. Abrir http://127.0.0.1:8080 y entrar a la pantalla de cocina.\n4. Mirar: docker logs restoya_backend -f",
       "adicional": "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory\n\nLo importante para la defensa: despues de poner el indice, la consulta SQL bajo de 1204,8 ms a 0,9 ms y el proceso SEGUIA MURIENDO. Un indice acelera la busqueda de las filas, no evita traer un millon de ellas a la memoria de Node. El problema no era la base: era la falta de LIMIT.",
@@ -61,14 +86,17 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "punto-14"
+      ],
       "descripcion": "El control de origen estaba escrito como origin.includes('onrender.com'). Eso es String.prototype.includes, no Array.prototype.includes: pregunta si el texto 'onrender.com' aparece EN ALGUN LADO del origen. Cualquiera que registre onrender.com.sitio-falso.net pasa el control y puede hacer peticiones con las credenciales de la victima desde su propio sitio.",
       "pasos": "1. curl -H \"Origin: https://onrender.com.sitio-falso.net\" -I http://127.0.0.1:8080/api/productos\n2. Mirar la cabecera Access-Control-Allow-Origin en la respuesta.",
       "adicional": "Antes del arreglo la respuesta devolvia el origen falso como permitido. Es el error tipico de confundir los dos includes, y pasa desapercibido porque el codigo 'se lee bien'.",
       "notas": [
         "Se reemplaza por una lista exacta leida de CORS_ORIGENES, comparada con Array.includes sobre el valor completo del encabezado."
       ],
-      "horas": 1.0,
+      "horas": 1,
       "commit": "cae3fda",
       "archivos": "backend/index.js",
       "verificacion": "Repetido el mismo curl: ahora la peticion se rechaza y no aparece Access-Control-Allow-Origin. Los origenes de la lista siguen funcionando."
@@ -82,7 +110,11 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "abuso-de-api", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "abuso-de-api",
+        "punto-14"
+      ],
       "descripcion": "La ruta del chatbot estaba abierta: sin token, sin limite de peticiones, y reenviando cada mensaje a la API de Gemini con la clave del proyecto. Cualquiera con la direccion podia usar la cuenta del grupo como si fuera propia, hasta agotar la cuota o la facturacion.",
       "pasos": "1. Sin iniciar sesion: for i in $(seq 1 50); do curl -s -X POST http://127.0.0.1:8080/api/chatbot -H 'Content-Type: application/json' -d '{\"mensaje\":\"hola\"}' -o /dev/null -w \"%{http_code} \"; done\n2. Antes del arreglo: 50 respuestas 200, y 50 llamadas facturadas a Gemini.",
       "adicional": "Es el caso de 'abuso de API' que el punto 14 pide considerar. El dano no es robo de datos: es consumo de un recurso pago de un tercero a nombre del grupo.",
@@ -104,14 +136,18 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "exposicion", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "exposicion",
+        "punto-14"
+      ],
       "descripcion": "GET / redirigia a /api-docs, que servia la documentacion completa de la API: todas las rutas, todos los parametros, todos los modelos. Es el indice de la superficie de ataque, entregado a quien entre a la direccion principal.",
       "pasos": "1. curl -I http://127.0.0.1:8080/\n2. Seguir la redireccion y mirar /api-docs sin ninguna credencial.",
       "notas": [
         "Ahora no se publica salvo que SWAGGER_HABILITADO sea true, y en ese caso pide usuario y contrasena por Basic.",
         "La comparacion de la contrasena usa crypto.timingSafeEqual y no ===, para no filtrar informacion por el tiempo que tarda en responder."
       ],
-      "horas": 1.0,
+      "horas": 1,
       "commit": "cae3fda",
       "archivos": "backend/index.js",
       "verificacion": "Con la variable en false, /api-docs devuelve 404. Con true y sin credenciales, 401. Con las credenciales correctas, la documentacion."
@@ -125,13 +161,17 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "punto-5", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "punto-5",
+        "punto-14"
+      ],
       "descripcion": "Express estaba detras de nginx pero sin app.set('trust proxy'). Resultado: req.ip devolvia siempre la IP del contenedor de nginx, asi que el limitador de intentos de login contaba TODOS los intentos del mundo como si fueran de la misma IP... o, peor, los distribuia mal. El control existia y no protegia de nada.",
       "pasos": "1. Antes del arreglo, dentro del contenedor: node -e \"...\" mostrando req.ip en cada peticion.\n2. Todas las peticiones llegaban con la IP de la red interna de Docker.",
       "notas": [
         "Se agrega app.set('trust proxy', 1): uno solo, el nginx propio. Poner 'true' confiaria en toda la cadena de encabezados, que es justamente lo que permite falsificarla."
       ],
-      "horas": 1.0,
+      "horas": 1,
       "commit": "44bb050",
       "archivos": "backend/index.js",
       "verificacion": "req.ip ahora devuelve la direccion real del cliente y el limitador cuenta por cliente. Encadena con INC-06."
@@ -145,7 +185,12 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "dependencias", "cadena-de-suministro", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "dependencias",
+        "cadena-de-suministro",
+        "punto-14"
+      ],
       "descripcion": "El escaneo de la imagen del backend con Trivy devolvio una vulnerabilidad critica en proxy-addr, la biblioteca que Express usa para resolver req.ip cuando hay trust proxy. Permite falsificar la direccion usando una forma IPv4 mapeada en IPv6. Encadenado con INC-05, el resultado es que el limite de intentos de login que acababamos de arreglar se podia esquivar cambiando un encabezado.",
       "pasos": "1. docker build -t restoya-backend:local ./backend\n2. trivy image --severity CRITICAL,HIGH restoya-backend:local",
       "adicional": "Esta es la que mas ensena de las 15: dos cosas que por separado parecen menores (confiar en el proxy, una dependencia desactualizada) se suman en un camino de ataque concreto. Tambien es el ejemplo de 'ataque a la cadena de suministro' que pide el punto 14: el codigo del grupo no tenia el fallo.",
@@ -153,7 +198,7 @@
         "Actualizada la dependencia. Nuevo escaneo: la imagen del backend paso de 1 critica y 33 altas a 0 criticas y 6 altas.",
         "Las 6 que quedan no tienen parche publicado (brotli de Alpine, biblioteca estandar de Go en la imagen de postgres) y estan listadas en docs/09-seguridad.md."
       ],
-      "horas": 2.0,
+      "horas": 2,
       "commit": "cae3fda",
       "archivos": "backend/package.json, backend/package-lock.json",
       "verificacion": "trivy image --severity CRITICAL restoya-backend:local devuelve 0 resultados."
@@ -167,7 +212,10 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["seguridad", "punto-14"],
+      "etiquetas": [
+        "seguridad",
+        "punto-14"
+      ],
       "descripcion": "Un valor subido para probar que quedo en el codigo. 100 intentos cada 15 minutos son 9600 por dia contra una sola cuenta: suficiente para un diccionario de contrasenas comunes.",
       "pasos": "1. Buscar en backend/index.js el limitador de /api/auth.\n2. Antes del arreglo: max: 100.",
       "notas": [
@@ -187,7 +235,10 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["integridad", "punto-5"],
+      "etiquetas": [
+        "integridad",
+        "punto-5"
+      ],
       "descripcion": "El backend corria sync({alter:true}) en cada arranque. Sequelize compara el modelo con el esquema y 'arregla' las diferencias: en la practica borraba y recreaba las 7 claves foraneas cada vez, y en mesas fue agregando una restriccion UNIQUE nueva por arranque hasta juntar 8 iguales. Cada una es un indice que PostgreSQL mantiene en cada INSERT y en cada UPDATE.",
       "pasos": "1. SELECT conname FROM pg_constraint WHERE conrelid = 'mesas'::regclass;\n2. Antes del arreglo aparecian mesas_numero_key, mesas_numero_key1 ... mesas_numero_key7.",
       "adicional": "Ademas del costo, alter:true es peligroso: toma un ACCESS EXCLUSIVE sobre la tabla y puede intentar cambiar tipos de columna sobre datos reales. No es algo que deba correr al arrancar un servicio.",
@@ -195,7 +246,7 @@
         "Se saca del arranque. Ahora DB_SYNC controla el comportamiento y vale 'none' por defecto: el arranque solo verifica que la conexion funcione.",
         "Las 7 restricciones duplicadas se borraron a mano."
       ],
-      "horas": 2.0,
+      "horas": 2,
       "commit": "44bb050",
       "archivos": "backend/index.js, infra/compose/docker-compose.yml",
       "verificacion": "Reiniciado el backend 5 veces seguidas: pg_constraint no cambia. El arranque bajo de 4,1 s a 0,9 s."
@@ -209,7 +260,11 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["rendimiento", "integridad", "punto-5"],
+      "etiquetas": [
+        "rendimiento",
+        "integridad",
+        "punto-5"
+      ],
       "descripcion": "Cada inicio de sesion hacia un recorrido completo de la tabla de usuarios. Pero lo serio no era eso: sin UNIQUE en la base, el alta comprobaba 'no existe este correo' con un SELECT y despues insertaba. Dos altas simultaneas con el mismo correo pasan las dos el SELECT y se insertan las dos.",
       "pasos": "1. EXPLAIN ANALYZE SELECT * FROM usuarios WHERE email = 'alguien@ejemplo.test';\n2. Antes: Seq Scan, 282,1 ms.\n3. Para la carrera: dos POST /api/usuarios simultaneos con el mismo email.",
       "notas": [
@@ -230,14 +285,17 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["rendimiento", "punto-5"],
+      "etiquetas": [
+        "rendimiento",
+        "punto-5"
+      ],
       "descripcion": "El tablero traia todos los pagos en estado PAGADO con findAll y los sumaba en Node con un reduce. Dos millones de filas viajando de la base al proceso para devolver un solo numero.",
       "pasos": "1. Abrir el tablero con la base de prueba cargada.\n2. Mirar la memoria del proceso: docker stats restoya_backend",
       "adicional": "Paso por tres versiones y las tres estan documentadas en el codigo: reduce en JS (tumbaba el proceso), AVG() en la base (171 ms, sin transferir nada), y vista materializada (1,4 ms). La segunda ya resolvia el problema grave; la tercera es optimizacion.",
       "notas": [
         "Ningun indice mejora el AVG(): el 33% de la tabla esta en PAGADO y hay que leerla igual. Por eso la solucion fue la vista materializada y no un indice mas."
       ],
-      "horas": 2.0,
+      "horas": 2,
       "commit": "44bb050",
       "archivos": "backend/src/controllers/dashboard.controller.js, infra/postgres/optimizacion/vistas-materializadas.sql",
       "verificacion": "1,4 ms y memoria estable. El tablero completo bajo de varios segundos a milisegundos."
@@ -251,14 +309,17 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["infraestructura", "punto-10"],
+      "etiquetas": [
+        "infraestructura",
+        "punto-10"
+      ],
       "descripcion": "nginx resuelve el nombre 'backend' una sola vez, al arrancar, y se queda con esa IP. Docker le asigna una IP nueva a cada contenedor recreado, asi que despues de cualquier docker compose up -d que toque el backend, nginx sigue hablandole a una direccion que ya no existe: 502 con el backend perfectamente sano.",
       "pasos": "1. docker compose --profile app up -d\n2. Comprobar que http://127.0.0.1:8080/api/productos responde 200.\n3. docker compose --profile app up -d --force-recreate backend\n4. Repetir la peticion: 502.",
       "adicional": "Es el caso que mas se parece a 'funciona en mi maquina': aparece solo despues de recrear, nunca en un arranque limpio.",
       "notas": [
         "Arreglado con resolver 127.0.0.11 (el DNS interno de Docker) valid=10s y proxy_pass por variable, que obliga a nginx a resolver en cada peticion."
       ],
-      "horas": 2.0,
+      "horas": 2,
       "commit": "f82e97d",
       "archivos": "frontend/nginx.conf",
       "verificacion": "Forzada la recreacion: la IP del backend paso de .13 a .11 y las tres peticiones siguientes dieron 200 sin tocar nginx."
@@ -272,7 +333,11 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["infraestructura", "windows", "punto-14"],
+      "etiquetas": [
+        "infraestructura",
+        "windows",
+        "punto-14"
+      ],
       "descripcion": "Git en Windows viene con core.autocrlf=true: al bajar el repositorio convierte los finales de linea a CRLF. /bin/sh del contenedor lee 'set -u\\r' y no entiende la opcion. El contenedor arranca, muere y vuelve a arrancar para siempre.",
       "pasos": "1. Clonar el repositorio en Windows con la configuracion por defecto.\n2. docker compose --profile app up -d\n3. docker logs restoya_backup",
       "adicional": "Le hubiera pasado a cualquiera del grupo que clonara en Windows, que son todos. No es un problema de 'esta maquina'.",
@@ -293,7 +358,10 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["monitoreo", "punto-10"],
+      "etiquetas": [
+        "monitoreo",
+        "punto-10"
+      ],
       "descripcion": "La regla comparaba nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes > 0,85. Con el sistema sin hacer nada eso da 0,916, porque V8 mantiene el monticulo RESERVADO casi lleno: 'total' no es el techo, es lo que V8 pidio hasta ahora. Una alerta que suena siempre es una alerta que nadie mira.",
       "pasos": "1. Levantar el perfil de monitoreo sin trafico.\n2. En Prometheus: nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes\n3. Da 0,916 con 41 MB usados.",
       "adicional": "El valor que importa es el techo real de V8, que es donde el proceso muere: 2240 MB, el mismo que mato el proceso en INC-01.",
@@ -314,14 +382,17 @@
       "reproducibilidad": "always",
       "estado": "closed",
       "resolucion": "fixed",
-      "etiquetas": ["monitoreo", "punto-10"],
+      "etiquetas": [
+        "monitoreo",
+        "punto-10"
+      ],
       "descripcion": "El webhook apuntaba a /-/healthy, que solo acepta GET. Alertmanager manda POST y recibe 405. La alerta se veia en Alertmanager, con lo cual todo 'parecia' andar, pero el aviso no llegaba a ningun lado. Es el peor tipo de fallo de monitoreo: el sistema que avisa esta roto y no avisa que esta roto.",
       "pasos": "1. Parar el backend para disparar la alerta de servicio caido.\n2. Mirar el registro de Alertmanager: notify retry, 405.",
       "notas": [
         "Se agrega un servicio receptor-alertas (nginx) que acepta el POST, registra el cuerpo completo y devuelve 200.",
         "Para que $request_body tenga contenido hace falta un proxy_pass a un segundo bloque server: nginx no lee el cuerpo si no lo va a reenviar."
       ],
-      "horas": 2.0,
+      "horas": 2,
       "commit": "f82e97d",
       "archivos": "infra/prometheus/alertmanager.yml, infra/prometheus/receptor-nginx.conf, infra/compose/docker-compose.yml",
       "verificacion": "Probada de punta a punta: se paro el backend, la alerta paso a pending a los 32 s, a firing a los 90 s, el receptor registro el JSON completo, y al levantarlo llego el aviso de resuelto."
@@ -335,7 +406,11 @@
       "reproducibilidad": "always",
       "estado": "acknowledged",
       "resolucion": "open",
-      "etiquetas": ["monitoreo", "limitacion-del-entorno", "punto-10"],
+      "etiquetas": [
+        "monitoreo",
+        "limitacion-del-entorno",
+        "punto-10"
+      ],
       "descripcion": "cAdvisor repite 36 veces 'failed to identify the read-write layer ID ... mount-id: no such file or directory' y no publica metricas por contenedor. La causa es que este Docker Desktop usa el almacen de imagenes de containerd (Storage Driver: overlayfs, io.containerd.snapshotter.v1) y cAdvisor busca la capa de escritura en la ruta del almacen clasico, que no existe.",
       "pasos": "1. docker compose --profile monitoreo up -d\n2. docker logs restoya_cadvisor\n3. En Prometheus: container_memory_usage_bytes{name=~\"restoya.*\"} no devuelve nada.",
       "adicional": "Se probaron --docker_only=true y --disable_metrics=disk,diskIO en un contenedor de prueba aparte: no alcanza, porque el fallo ocurre al crear el manejador, antes de recolectar.",
@@ -347,6 +422,58 @@
       "commit": "",
       "archivos": "infra/grafana/dashboards/restoya.json",
       "verificacion": "Sin verificar: la incidencia sigue abierta. Lo que si se verifico es la mitigacion: los paneles muestran datos reales por otra via."
+    },
+    {
+      "ref": "INC-16",
+      "resumen": "pgAdmin se reinicia en bucle si el correo del administrador usa un dominio reservado",
+      "categoria": "Infraestructura y Docker",
+      "severidad": "minor",
+      "prioridad": "normal",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": [
+        "infraestructura",
+        "cicd",
+        "punto-8"
+      ],
+      "descripcion": "pgAdmin valida la direccion de PGADMIN_DEFAULT_EMAIL al arrancar y rechaza los dominios de uso reservado (.test, .invalid, .example). Si la rechaza, el proceso muere y el contenedor vuelve a arrancar, para siempre. Lo molesto es que .test es justamente el dominio que el RFC 2606 reserva para datos de prueba, asi que la eleccion \"correcta\" es la que rompe.",
+      "pasos": "1. Poner PGADMIN_EMAIL=alguien@example.test en infra/compose/.env\n2. docker compose --profile app up -d\n3. docker logs restoya_pgadmin\n4. docker inspect -f {{.RestartCount}} restoya_pgadmin",
+      "adicional": "ci@example.test does not appear to be a valid email address.\nValidation output: The part after the @-sign is a special-use or reserved name that cannot be used with email.\n\nLo encontro la prueba de humo del punto 8 en su primera corrida con la comprobacion nueva. La comprobacion VIEJA miraba el estado del contenedor en un instante, y como un contenedor en bucle pasa la mayor parte del tiempo en running, a veces lo agarraba en restarting y a veces no: la misma corrida pasaba una vez y fallaba la siguiente sin que nada hubiera cambiado.",
+      "notas": [
+        "Se cambia a example.com en el .env de la prueba, que pasa la validacion.",
+        "Mas importante que el arreglo: la comprobacion del pipeline ahora mira docker inspect .RestartCount en vez del estado. Un contenedor en bucle no puede disimular el contador. Con la comprobacion vieja, el bucle del punto 14 (una variable sin declarar) habria pasado desapercibido igual."
+      ],
+      "horas": 1,
+      "commit": "",
+      "archivos": ".github/workflows/ci.yml",
+      "verificacion": "Corrida del pipeline con la comprobacion nueva: los cinco contenedores con reinicios=0."
+    },
+    {
+      "ref": "INC-17",
+      "resumen": "El volumen externo restoya_pgdata no existe en un entorno limpio y nada lo crea",
+      "categoria": "Infraestructura y Docker",
+      "severidad": "major",
+      "prioridad": "high",
+      "reproducibilidad": "always",
+      "estado": "closed",
+      "resolucion": "fixed",
+      "etiquetas": [
+        "infraestructura",
+        "cicd",
+        "punto-8"
+      ],
+      "descripcion": "docker-compose.yml declara pgdata como external: true. Eso es correcto y deliberado: el volumen existia en la maquina del equipo antes que el compose, y declararlo normal lo habria recreado vacio, perdiendo los 30 millones de filas del punto 4. La contrapartida es que en una maquina donde el volumen NO existe, docker compose up falla antes de arrancar nada. O sea: el proyecto no se podia levantar de cero.",
+      "pasos": "1. En una maquina sin el volumen: docker volume rm restoya_pgdata\n2. cd infra/compose && docker compose --profile app up -d",
+      "adicional": "external volume \"restoya_pgdata\" not found\n\nNadie se habia enterado porque en la maquina del equipo el volumen ya estaba. Lo encontro la PRIMERA corrida del pipeline del punto 8, que corre en un entorno limpio cada vez. Es exactamente el tipo de problema para el que sirve tener integracion continua: no es un error de codigo, es una suposicion sobre el entorno que nadie habia escrito.",
+      "notas": [
+        "El pipeline crea el volumen antes de levantar. Queda documentado en docs/11-cicd.md.",
+        "Pendiente: decir esto mismo en el README, para quien clone el proyecto en otra maquina."
+      ],
+      "horas": 0.5,
+      "commit": "",
+      "archivos": ".github/workflows/ci.yml, infra/compose/docker-compose.yml",
+      "verificacion": "Corrida del pipeline: la aplicacion levanta de cero en un runner limpio y responde HTTP 200 en /api/productos."
     }
   ]
 }
