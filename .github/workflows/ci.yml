@@ -206,6 +206,15 @@ jobs:
         working-directory: infra/compose
         run: docker compose --profile app config > /dev/null
 
+      # El volumen pgdata esta declarado como "external" en el compose, y es a
+      # proposito: existia antes que el compose, en la maquina del equipo, y
+      # declararlo normal lo habria recreado vacio, perdiendo los datos.
+      # La contrapartida es que un entorno limpio tiene que crearlo primero.
+      # Esto lo descubrio esta misma prueba de humo en su primera corrida:
+      # "external volume restoya_pgdata not found".
+      - name: Crear el volumen externo
+        run: docker volume create restoya_pgdata
+
       - name: Levantar la aplicacion
         working-directory: infra/compose
         run: docker compose --profile app up -d --build
