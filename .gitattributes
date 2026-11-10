@@ -1,0 +1,42 @@
+# Finales de linea.
+#
+# PROBLEMA REAL, no teorico. Git en Windows suele venir con
+# core.autocrlf=true, que convierte los archivos a CRLF al bajarlos. Eso no
+# molesta en Windows... hasta que el archivo se monta dentro de un contenedor
+# Linux y lo ejecuta /bin/sh:
+#
+#   /backup.sh: set: line 7: illegal option -
+#   /backup.sh: line 6: : not found
+#
+# El shell lee "set -u\r" y el retorno de carro pasa a ser parte del
+# argumento. El servicio de copias quedo reiniciandose en bucle, y en git el
+# archivo estaba perfecto: el destrozo lo hacia el checkout.
+#
+# Aparecio al cambiar de rama durante el punto 14, pero le hubiera pasado a
+# CUALQUIERA que clonara el repositorio en Windows. Este archivo lo arregla
+# para todos y de una vez.
+
+# Por defecto, que git decida si un archivo es texto.
+* text=auto
+
+# Lo que se EJECUTA o se PARSEA dentro de un contenedor Linux va en LF, sin
+# importar el sistema de quien lo baje.
+*.sh            text eol=lf
+*.sql           text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.conf          text eol=lf
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.env.example    text eol=lf
+
+# Binarios: que git no toque nada.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.dump          binary
+*.woff          binary
+*.woff2         binary

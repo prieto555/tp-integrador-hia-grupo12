@@ -1,4 +1,4 @@
-# TP Integrador HIA 2026 — Grupo 13
+# TP Integrador HIA 2026 — Grupo 12
 
 Práctica Integradora Final de **Herramientas Informáticas Avanzadas**, Analista
 Programador Universitario, Facultad de Ingeniería — UNJu.
@@ -24,14 +24,57 @@ repositorio. No son submódulos: se editan como carpetas normales.
 
 ## Cómo levantarlo hoy
 
-Todavía no hay `docker-compose.yml` — es la primera tarea del frente 1. Mientras
-tanto, el entorno mínimo para desarrollar:
-
 ```bash
-docker run -d --name restoya_db \
-  -e POSTGRES_DB=restoyadb -e POSTGRES_USER=restoya -e POSTGRES_PASSWORD=cambiar \
-  -p 5433:5432 -v restoya_pgdata:/var/lib/postgresql/data postgres:16-alpine
+cd infra/compose
+cp .env.example .env     # completar las claves
+
+# Alertmanager monta este archivo (lleva el secreto que comparte con el
+# webhook de n8n del punto 13) y esta en el .gitignore, asi que en un clon
+# nuevo NO existe. Hay que crearlo antes: si no, Docker monta un archivo que
+# no esta y crea una CARPETA con ese nombre, y Alertmanager no arranca. Lo
+# llena despues infra/automatizacion/preparar-n8n.sh.
+touch ../prometheus/.token-alertas
+
+docker compose --profile app --profile monitoreo up -d --build
 ```
+
+> ⚠️ **Mientras los tres PR no esten mergeados, esto NO se puede levantar
+> completo desde una sola rama.** El `docker-compose.yml` vive en
+> `feature/2-sql-replicacion` y los scripts y la configuracion de Mantis,
+> Nextcloud y n8n viven en `feature/5-procesos`. Y como el compose **monta**
+> archivos de esas rutas, cambiar de rama se los lleva del disco: cambiar a la
+> rama 2 borra `infra/incidencias/config_inc.php`, el contenedor de Mantis se
+> queda sin configuracion y pasa a devolver **HTTP 500 en todas sus paginas**.
+> Hasta que los PR entren a `develop`, para correr el laboratorio completo hay
+> que armar una rama que los junte:
+>
+> ```bash
+> git checkout -b integracion develop
+> git merge feature/2-sql-replicacion feature/3-app-cicd feature/5-procesos
+> ```
+
+> Es el mismo tropiezo que la incidencia **INC-17**: un supuesto sobre el
+> entorno que funcionaba en la maquina donde se escribio y no en un clon
+> limpio. Por eso esta escrito aca y no solo en la cabeza de alguien.
+
+| Dónde | Qué |
+|---|---|
+| http://127.0.0.1:8080 | La aplicación (nginx sirve el frente y hace de *proxy* de `/api`) |
+| http://127.0.0.1:5050 | pgAdmin |
+| http://127.0.0.1:3001 | Grafana |
+| http://127.0.0.1:9090 | Prometheus |
+| http://127.0.0.1:9093 | Alertmanager |
+
+Los perfiles son independientes: `up -d` solo levanta la base, pgAdmin y las
+copias; `--profile app` agrega la aplicación; `--profile monitoreo` agrega
+Prometheus, Grafana y los exportadores.
+
+**El backend no publica ningún puerto.** Sólo lo alcanza nginx por la red
+interna. Si querés pegarle directo, es desde adentro de la red de Docker.
+
+Para programar con recarga en caliente, se levanta sólo el stack de datos
+(`docker compose up -d`, sin `--profile app`) y el backend y el frontend se
+corren fuera del contenedor:
 
 ```bash
 cd backend && cp .env.example .env && npm install && npm start
@@ -41,19 +84,23 @@ cd backend && cp .env.example .env && npm install && npm start
 cd frontend && npm install && npm start
 ```
 
-El backend queda en `http://localhost:3000` (Swagger en `/api-docs`) y el
-frontend en `http://localhost:4200`.
+No hace falta editar nada para pasar de un modo al otro: la URL de la API sale
+de `src/environments/`, y Angular reemplaza el archivo al compilar para
+despliegue.
 
-### Dos cosas que hay que arreglar antes de que esto funcione de punta a punta
+### Si clonás en Windows, leé esto
 
-1. **El frontend apunta a Render, no a tu backend local.** La URL está escrita a
-   mano en 13 archivos de `frontend/src/app/`. Sacarla a un archivo de entorno es
-   la primera tarea de `feature/3-app-cicd` (y es el punto 7.5 de la consigna:
-   separar configuración de desarrollo y de despliegue).
-2. **`backend/index.js` arranca con `sequelize.sync({ alter: true })`,** que
-   reescribe el esquema en cada arranque. Contra una base compartida le pisa el
-   esquema al resto, y con el dataset de 6.000.000 de filas es directamente
-   inviable. Pasarlo a migraciones es tarea de `feature/1-base-de-datos`.
+El repositorio trae un `.gitattributes` que fuerza finales de línea LF en todo
+lo que se ejecuta dentro de un contenedor. **No lo saques.** Sin él, Git en
+Windows baja los `.sh` con CRLF, y el shell del contenedor falla así:
+
+```
+/backup.sh: set: line 7: illegal option -
+```
+
+El servicio de copias queda reiniciándose en bucle y en Git el archivo se ve
+perfecto, porque el destrozo lo hace el *checkout*. Si te pasa, revisá que el
+archivo esté en LF antes de buscar en otro lado.
 
 ## Ramas
 
@@ -104,7 +151,7 @@ aprobación y bloquea el borrado y el *force push*. La configuración está
 versionada en `.github/ruleset-main.json`, así que se puede volver a aplicar con:
 
 ```bash
-gh api -X POST repos/prieto555/tp-integrador-hia-grupo13/rulesets --input .github/ruleset-main.json
+gh api -X POST repos/prieto555/tp-integrador-hia-grupo12/rulesets --input .github/ruleset-main.json
 ```
 
 Se comprobó intentando un push directo a `main`:
@@ -136,13 +183,45 @@ el *ruleset* un rato.
 
 ## Integrantes
 
-| Integrante | Frente | Rama |
+Grupo 12 — Herramientas Informáticas Avanzadas, FI-UNJu, 2026.
+
+| Integrante | LU |
+|---|---|
+| Aramayo, Gerardo Leonel | 4082 |
+| Armella, Julián Enrique | 5435 |
+| Cruz, Florencia Agustina | 6810 |
+| Pol, Jaime Facundo | 5937 |
+| Prieto, Gabriel Arturo | 5486 |
+
+### Reparto de frentes
+
+**Sin asignar todavía.** Se acuerda entre los cinco, no lo decide el
+repositorio. Cada uno trabaja en su rama y abre un *pull request* a
+`develop`.
+
+| Frente | Rama | Responsable |
 |---|---|---|
-|  | 1 · Base de datos | `feature/1-base-de-datos` |
-|  | 2 · SQL y replicación | `feature/2-sql-replicacion` |
-|  | 3 · App y CI/CD | `feature/3-app-cicd` |
-|  | 4 · Túnel y monitoreo | `feature/4-tunel-monitoreo` |
-|  | 5 · Procesos y automatización | `feature/5-procesos` |
+| 1 · Base de datos | `feature/1-base-de-datos` | *a definir* |
+| 2 · SQL y replicación | `feature/2-sql-replicacion` | *a definir* |
+| 3 · App y CI/CD | `feature/3-app-cicd` | *a definir* |
+| 4 · Túnel y monitoreo | `feature/4-tunel-monitoreo` | *a definir* |
+| 5 · Procesos y automatización | `feature/5-procesos` | *a definir* |
+
+> **El repositorio se renombró.** Se había creado como
+> `tp-integrador-hia-grupo13`, antes de confirmar el número de grupo, y el
+> 10/11 pasó a **`tp-integrador-hia-grupo12`**. Si lo clonaste antes, no
+> hace falta que hagas nada: GitHub redirige la dirección vieja. Igual
+> conviene actualizar el remoto, porque la redirección no es para siempre:
+>
+> ```bash
+> git remote set-url origin https://github.com/prieto555/tp-integrador-hia-grupo12.git
+> ```
+>
+> Los nombres `proybackendgrupo13` y `proyfrontendgrupo13` **no** se
+> cambiaron, y es a propósito: vienen de la aplicación original de
+> Programación y Servicios Web, donde el grupo sí era el 13. Tocarlos
+> significa cambiar `angular.json`, las rutas de compilación y el
+> `Dockerfile`, y no aporta nada a este trabajo.
 
 ## Repositorios de origen
 

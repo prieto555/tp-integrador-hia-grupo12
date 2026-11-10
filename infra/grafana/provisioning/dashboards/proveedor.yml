@@ -1,0 +1,21 @@
+# Proveedor de tableros.
+#
+# Grafana lee los .json de la carpeta y los carga al arrancar. El tablero vive
+# en el repositorio, se revisa en un pull request como cualquier otro archivo,
+# y no se pierde si alguien borra el volumen.
+
+apiVersion: 1
+
+providers:
+  - name: restoya
+    orgId: 1
+    folder: RestoYa
+    type: file
+    disableDeletion: false
+    # Relee la carpeta cada 30 s: editar el .json y recargar el navegador
+    # alcanza para ver el cambio.
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,3 +1,4 @@
+import { environment } from '../../environments/environment';
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -6,7 +7,7 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class HistorialService {
-  private apiUrl = 'https://proybackendgrupo13-9bp9.onrender.com/api/historial';
+  private apiUrl = environment.apiUrl + '/historial';
 
   constructor(private http: HttpClient) { }
 

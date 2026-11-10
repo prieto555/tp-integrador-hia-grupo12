@@ -7,7 +7,14 @@ const Usuario = sequelize.define('Usuario', {
     apellido: { type: DataTypes.STRING, allowNull: false },
     nombre: { type: DataTypes.STRING, allowNull: false },
     dni: { type: DataTypes.STRING, allowNull: true },
-    email: { type: DataTypes.STRING, allowNull: false },
+    // El UNIQUE no es solo un indice: es lo unico que impide que existan dos
+    // cuentas con el mismo correo. La verificacion que hacia la aplicacion
+    // (findOne y despues create) deja una ventana entre las dos sentencias en
+    // la que entra otra alta igual. El indice en la base ya existe
+    // (usuarios_email_unico, creado en el punto 5 despues de comprobar que no
+    // hubiera duplicados); esto hace que el modelo diga lo mismo que el
+    // esquema, y que Sequelize valide antes de llegar a la base.
+    email: { type: DataTypes.STRING, allowNull: false, unique: true },
     password: { type: DataTypes.STRING, allowNull: false }
 }, {
     tableName: 'usuarios', // Nombre de la tabla en minúsculas y plural

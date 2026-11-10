@@ -1,0 +1,85 @@
+# Prometheus del punto 10.
+#
+# Todos los objetivos se nombran por el nombre del servicio de compose y se
+# alcanzan por la red interna. Ninguno esta publicado al host: desde afuera de
+# Docker, las metricas no existen.
+#
+# Eso importa mas de lo que parece. /metrics de una aplicacion cuenta rutas,
+# codigos de error, nombres de base y versiones: es un mapa del sistema para
+# quien lo quiera atacar. Publicarlo "para poder verlo" es el error clasico.
+
+global:
+  # Cada cuanto se consulta a cada objetivo. 15 s es el valor habitual: mas
+  # seguido llena el disco sin agregar informacion, mas espaciado hace que una
+  # caida corta pase desapercibida.
+  scrape_interval: 15s
+  # Cada cuanto se evaluan las reglas de alerta.
+  evaluation_interval: 15s
+  external_labels:
+    proyecto: restoya
+    entorno: local
+
+rule_files:
+  - /etc/prometheus/reglas/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # El propio Prometheus. Sirve para saber si el que vigila esta vivo, y para
+  # ver cuanto tarda en consultar a los demas.
+  # -------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # -------------------------------------------------------------------------
+  # Sistema operativo: CPU, memoria, disco y red.
+  #
+  # OJO: en Docker Desktop sobre Windows, el "sistema operativo" que ve este
+  # exportador es la maquina virtual de WSL2, no Windows. Los numeros son
+  # reales y sirven para el TP, pero no son los del Administrador de tareas.
+  # -------------------------------------------------------------------------
+  - job_name: sistema
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # -------------------------------------------------------------------------
+  # Contenedores: CPU, memoria, red y reinicios de cada uno.
+  # -------------------------------------------------------------------------
+  - job_name: contenedores
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL: conexiones, transacciones, tamano de la base, bloqueos y
+  # aciertos de cache.
+  # -------------------------------------------------------------------------
+  # Dos destinos, uno por nodo, con la etiqueta "nodo" para poder separarlos
+  # en el tablero. El de la replica vive en el perfil "replica": si ese perfil
+  # no esta levantado, Prometheus lo muestra caido, que es justo lo que
+  # queremos que diga.
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          nodo: primario
+      - targets: ["postgres-exporter-replica:9187"]
+        labels:
+          nodo: replica
+
+  # -------------------------------------------------------------------------
+  # La aplicacion. El backend expone /metrics con prom-client: duracion de
+  # cada peticion por ruta y codigo, memoria del proceso y retraso del bucle
+  # de eventos.
+  #
+  # nginx solo hace de proxy de /api/, asi que /metrics NO es alcanzable desde
+  # el navegador: solo lo ve Prometheus, por la red interna.
+  # -------------------------------------------------------------------------
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:3000"]
