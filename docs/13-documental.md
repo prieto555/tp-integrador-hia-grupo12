@@ -220,12 +220,76 @@ duplica carpetas ni cuentas.
 
 ---
 
-## 8. Limitaciones
+## 8. La corrida
 
-1. **Nextcloud todavía no se levantó.** El entorno de Docker de la máquina
-   dejó de arrancar mientras se trabajaba en esto. El *compose*, el script de
-   preparación y la estructura están escritos y revisados; **falta la corrida
-   y las capturas**. No se presenta como hecho.
+Hecha el **10/11/2026** contra Nextcloud **30.0.17**. Lo que quedó, leído de
+vuelta por WebDAV y por la API de compartidos, no de lo que el script dijo:
+
+| Qué | Verificado |
+|---|---|
+| Grupos | `equipo` (5 personas), `automatizacion` (el robot), `lectura` |
+| Cuentas | 6, con claves al azar guardadas en el `.env` y nunca impresas |
+| Carpetas | **18** bajo `RestoYa/` |
+| Documentos subidos | **11** |
+| Compartidos | 3, sin duplicados |
+| Enlaces públicos | `shareapi_allow_links = no` |
+| Auditoría | `admin_audit` habilitada y **escribiendo** |
+
+### La matriz de permisos, comprobada y no declarada
+
+Los permisos de Nextcloud son una suma de bits: 1 leer, 2 modificar, 4 crear,
+8 borrar, 16 volver a compartir.
+
+| Compartido con | Permisos | Qué significa |
+|---|---|---|
+| `equipo` | **15** | leer, crear, modificar y borrar — **sin el 16: no pueden volver a compartir** |
+| `automatizacion` | **5** | leer y crear, **nada más** |
+| `lectura` | **1** | sólo leer |
+
+El 5 del robot se probó de las dos puntas, entrando como la cuenta
+`automatizacion`:
+
+```
+PUT    Rendimiento/ZZZ-prueba.md  -> HTTP 201
+DELETE Rendimiento/ZZZ-prueba.md  -> HTTP 403
+```
+
+Puede dejar su informe y **no puede borrar nada**, que es exactamente lo que se
+buscaba: si el flujo de n8n se vuelve loco, el daño que puede hacer es dejar
+archivos de más, no llevarse los que había.
+
+### Tres cosas que sólo se vieron al correrlo
+
+1. **La auditoría estaba habilitada y no registraba nada.** `admin_audit`
+   escribe sus anotaciones en nivel *info* y el nivel por defecto de Nextcloud
+   es *warning*, así que el archivo quedaba en **cero bytes** y todo parecía en
+   orden. Hace falta `loglevel = 1`. Se comprobó generando una acción y
+   leyendo el archivo: aparecieron los intentos de ingreso y un
+   `File with id "180" deleted`. Una medida de seguridad que no se verifica no
+   es una medida de seguridad.
+2. **La ruta de los compartidos no lleva barra inicial.** La API OCS responde
+   **404 «Wrong path, file/folder does not exist»** a `path=/RestoYa` y
+   **200** a `path=RestoYa`, con la carpeta existiendo y estando indexada en
+   los dos casos. El error no insinúa que el problema sea el formato.
+3. **El nombre interno del contenedor tiene que estar en `trusted_domains`.**
+   Nextcloud rechaza con **HTTP 400** todo pedido cuya cabecera `Host` no
+   figure ahí. Desde el navegador no se nota, porque el `Host` es
+   `127.0.0.1`; lo que se rompe es que **otro servicio del grupo le hable por
+   su nombre de red**, que es justo lo que hace el flujo F03 del punto 13 para
+   subir su informe. Está en el script.
+
+Las tres quedaron resueltas dentro de `preparar-nextcloud.sh`, que se corrió
+tres veces: la segunda y la tercera no volvieron a crear carpetas ni a
+duplicar compartidos. Los documentos **sí** se vuelven a subir en cada
+corrida, a propósito, para que refrescar la documentación sea un comando.
+
+---
+
+## 9. Limitaciones
+
+1. **Faltan las capturas de pantalla.** Nextcloud está levantado, poblado y
+   con los permisos verificados (sección 8); lo que no está son las imágenes
+   de la interfaz, del diálogo de compartidos y del registro de auditoría.
 2. **Va por HTTP, no HTTPS.** Es aceptable mientras sólo escuche en
    `127.0.0.1`. En cuanto se publique por el túnel del punto 9, **tiene que
    ir por HTTPS**: hoy las contraseñas viajan en claro por el bucle local.
@@ -239,3 +303,7 @@ duplica carpetas ni cuentas.
 5. **La sincronización repositorio → Nextcloud es manual** (correr el
    script). No hay un flujo que la haga sola en cada *merge*. Sería un cuarto
    flujo de n8n razonable, y no se hizo.
+6. **El `loglevel = 1` que necesita la auditoría hace verboso el registro
+   general.** Nextcloud escribe en `nextcloud.log` todo lo de nivel *info*, no
+   sólo lo de la auditoría. En este laboratorio no molesta; en producción
+   convendría separar los destinos o rotar ese archivo.

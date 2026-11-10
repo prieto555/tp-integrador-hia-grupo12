@@ -19,6 +19,15 @@ RAIZ="$(cd "$AQUI/../.." && pwd)"
 ENV="$RAIZ/infra/compose/.env"
 CFG="$AQUI/config_inc.php"
 
+# En Git Bash, $AQUI es una ruta POSIX (/c/Users/...) y el node de Windows no
+# sabe resolverla: tira MODULE_NOT_FOUND. cygpath -m la deja como C:/Users/...,
+# que es lo que node espera. En Linux cygpath no existe, y tampoco hace falta.
+if command -v cygpath > /dev/null 2>&1; then
+    AQUI_NODE="$(cygpath -m "$AQUI")"
+else
+    AQUI_NODE="$AQUI"
+fi
+
 [ -f "$ENV" ] || { echo "Falta $ENV" >&2; exit 1; }
 # shellcheck disable=SC1090
 set -a; . "$ENV"; set +a
@@ -35,18 +44,92 @@ registro() { echo "$(date '+%H:%M:%S') | mantis | $*"; }
 obtener() { curl -s -b "$JAR" -c "$JAR" "$URL/$1"; }
 
 # Saca el valor de un campo oculto de un formulario.
-campo() { obtener "$1" | tr '>' '\n' | grep -oP "name=[\"']$2[\"'][^<]*value=[\"']\K[^\"']+" | head -1; }
+campo() { obtener "$1" | tr '>' '\n' | grep -oP "name=[\"']$2[\"'][^<]*value=[\"']\K[^\"']+" | head -1 || true; }
 
 # -----------------------------------------------------------------------------
-# 0. Esperar.
+# 0. Esperar a que conteste algo.
+#
+# OJO: aca no sirve "curl -fsS", que falla con cualquier codigo >= 400. Mantis
+# sin instalar devuelve 500 en todas sus paginas, porque las tablas no existen
+# todavia; esperando un 200 nos quedariamos 300 s y saldriamos con error justo
+# antes de instalarlo. Lo que se espera aca es que el servidor conteste, sea lo
+# que sea.
 # -----------------------------------------------------------------------------
+codigo_login() {
+    curl -s -o /dev/null -w '%{http_code}' "$URL/login_page.php" 2>/dev/null || echo 000
+}
+
 registro "Esperando a Mantis en $URL."
 for i in $(seq 1 60); do
-    if curl -fsS -o /dev/null "$URL/login_page.php" 2>/dev/null; then break; fi
+    c=$(codigo_login)
+    [ "$c" != "000" ] && break
     [ "$i" = 60 ] && { echo "No respondio en 300 s." >&2; exit 1; }
     sleep 5
 done
-registro "Responde."
+registro "Responde (HTTP $c)."
+
+# -----------------------------------------------------------------------------
+# 0b. Instalar el esquema, si la base esta vacia.
+#
+# La imagen no instala nada: trae MantisBT y Apache, y nada mas. El esquema lo
+# crea admin/install.php, que es un formulario web. Y el entrypoint de la imagen
+# ESCONDE la carpeta admin/ salvo que MANTIS_ENABLE_ADMIN valga 1.
+#
+# Que este escondida es correcto y no se cambia: admin/ trae el instalador y las
+# herramientas de mantenimiento, asi que con esa carpeta publicada cualquiera que
+# llegue al puerto puede reinstalar la base encima. Entonces se enciende para
+# instalar, se instala, y se vuelve a apagar.
+# -----------------------------------------------------------------------------
+COMPOSE="$RAIZ/infra/compose/docker-compose.yml"
+
+recrear_mantis() {
+    MANTIS_ENABLE_ADMIN="$1" docker compose -f "$COMPOSE" --profile incidencias \
+        up -d --force-recreate mantis > /dev/null 2>&1
+    for _ in $(seq 1 30); do
+        [ "$(codigo_login)" != "000" ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
+if [ "$(codigo_login)" = "200" ]; then
+    registro "El esquema ya esta instalado."
+else
+    registro "La base esta vacia: hay que instalar el esquema."
+    registro "Encendiendo admin/ SOLO para instalar."
+    recrear_mantis 1 || { echo "Mantis no volvio con admin/ encendida." >&2; exit 1; }
+
+    # admin_username y admin_password son las credenciales con las que el
+    # instalador CREARIA la base si no existiera. Aca la crea el contenedor de
+    # MariaDB, asi que van vacias a proposito: el usuario "mantis" ya tiene lo
+    # que necesita sobre su propia base y no hace falta darle el root del motor.
+    salida=$(curl -s -X POST \
+        -d "install=2" \
+        -d "db_type=mysqli" \
+        -d "hostname=mantis-db" \
+        -d "db_username=mantis" \
+        --data-urlencode "db_password=${MANTIS_DB_PASSWORD}" \
+        -d "database_name=incidencias" \
+        -d "admin_username=" -d "admin_password=" \
+        -d "db_table_prefix=mantis" \
+        -d "db_table_plugin_prefix=plugin" \
+        -d "db_table_suffix=_table" \
+        -d "timezone=America/Argentina/Jujuy" \
+        -d "go=Install/Upgrade+Database" \
+        "$URL/admin/install.php")
+
+    registro "Apagando admin/ de nuevo."
+    recrear_mantis 0 || { echo "Mantis no volvio con admin/ apagada." >&2; exit 1; }
+
+    c=$(codigo_login)
+    if [ "$c" != "200" ]; then
+        echo "El instalador no dejo la base usable (login_page.php da HTTP $c)." >&2
+        echo "Lo que contesto el instalador:" >&2
+        echo "$salida" | sed 's/<[^>]*>//g' | sed '/^[[:space:]]*$/d' | tail -25 >&2
+        exit 1
+    fi
+    registro "Esquema instalado y admin/ escondida de nuevo."
+fi
 
 # -----------------------------------------------------------------------------
 # 1. Entrar como administrador.
@@ -76,13 +159,21 @@ elif entrar administrator root; then
     tok=$(campo "account_page.php" "account_update_token")
     curl -s -b "$JAR" -c "$JAR" -o /dev/null -X POST \
         -d "account_update_token=$tok" \
+        --data-urlencode "password_current=root" \
         --data-urlencode "password=$CLAVE_ADMIN" \
         --data-urlencode "password_confirm=$CLAVE_ADMIN" \
         "$URL/account_update.php"
     printf '\n# Clave de administrator de Mantis, cambiada por preparar-mantis.sh\nMANTIS_ADMIN_PASSWORD=%s\n' \
         "$CLAVE_ADMIN" >> "$ENV"
     registro "Clave cambiada. Quedo en infra/compose/.env; no se imprime."
-    entrar administrator "$CLAVE_ADMIN" || { echo "No se pudo volver a entrar." >&2; exit 1; }
+    if ! entrar administrator "$CLAVE_ADMIN"; then
+        echo "El cambio de clave no se aplico." >&2
+        if entrar administrator root; then
+            echo "La clave de fabrica sigue sirviendo: el formulario descarto el cambio." >&2
+            echo "Mantis exige el campo password_current en account_update.php." >&2
+        fi
+        exit 1
+    fi
 else
     echo "No se pudo entrar. Si ya cambiaste la clave a mano, ponela en MANTIS_ADMIN_PASSWORD." >&2
     exit 1
@@ -105,7 +196,7 @@ else
 fi
 
 ID_PROYECTO=$(obtener "manage_proj_page.php" \
-    | grep -oP "manage_proj_edit_page\.php\?project_id=\K[0-9]+(?=[^>]*>$PROYECTO<)" | head -1)
+    | grep -oP "project_id=\K[0-9]+(?=[^>]*>$PROYECTO<)" | head -1 || true)
 [ -n "$ID_PROYECTO" ] || { echo "No se pudo averiguar el id del proyecto." >&2; exit 1; }
 registro "Proyecto $PROYECTO = id $ID_PROYECTO."
 
@@ -115,7 +206,7 @@ registro "Proyecto $PROYECTO = id $ID_PROYECTO."
 # Salen del JSON, para que la lista este en un solo lugar.
 # -----------------------------------------------------------------------------
 registro "Categorias."
-node -e 'const d=require("'"$AQUI"'/incidencias.json");console.log(d.categorias.join("\n"))' | while read -r cat; do
+node -e 'const d=require("'"$AQUI_NODE"'/incidencias.json");console.log(d.categorias.join("\n"))' | while read -r cat; do
     [ -z "$cat" ] && continue
     if obtener "manage_proj_edit_page.php?project_id=$ID_PROYECTO" | grep -qF ">$cat<"; then
         continue
@@ -136,7 +227,7 @@ done
 # laboratorio, que es exactamente lo que queremos para una demostracion.
 # -----------------------------------------------------------------------------
 registro "Cuentas."
-node -e 'const d=require("'"$AQUI"'/incidencias.json");for(const u of d.usuarios)console.log([u.usuario,u.nombre,u.email,u.acceso].join("|"))' \
+node -e 'const d=require("'"$AQUI_NODE"'/incidencias.json");for(const u of d.usuarios)console.log([u.usuario,u.nombre,u.email,u.acceso].join("|"))' \
 | while IFS='|' read -r usuario nombre email acceso; do
     [ -z "$usuario" ] && continue
     if obtener "manage_user_page.php?search=$usuario" | grep -q ">$usuario<"; then
@@ -183,7 +274,7 @@ else
         -d "create_api_token_form_token=$tok" \
         --data-urlencode "token_name=$nombre_token" \
         "$URL/api_token_create.php" \
-        | grep -oP 'readonly[^>]*value="\K[^"]+' | head -1)
+        | grep -oP '<div class="well">\K[^<]+' | head -1 || true)
 
     restaurar_reautenticacion
     trap 'rm -f "$JAR"' EXIT

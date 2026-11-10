@@ -176,10 +176,13 @@ subir "$RAIZ/docs/14-automatizacion.md"   "RestoYa/01-Gestion/14-automatizacion.
 compartir() {
     local ruta="$1" grupo="$2" permisos="$3"
     local codigo
+    # OJO con la ruta: va SIN barra inicial. Con "path=/RestoYa" el OCS
+    # responde 404 "Wrong path, file/folder does not exist" aunque la carpeta
+    # exista y este indexada; con "path=RestoYa" responde 200.
     codigo=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
         -u "$ADMIN:$NEXTCLOUD_ADMIN_PASSWORD" \
         -H "OCS-APIRequest: true" \
-        -d "path=/$ruta" -d "shareType=1" -d "shareWith=$grupo" -d "permissions=$permisos" \
+        -d "path=$ruta" -d "shareType=1" -d "shareWith=$grupo" -d "permissions=$permisos" \
         "$URL/ocs/v2.php/apps/files_sharing/api/v1/shares")
     case "$codigo" in
         200) registro "Compartida $ruta con $grupo (permisos $permisos)." ;;
@@ -201,6 +204,14 @@ compartir "RestoYa" lectura 1
 # -----------------------------------------------------------------------------
 # 6. Endurecer.
 # -----------------------------------------------------------------------------
+# El nombre interno del contenedor tiene que estar en trusted_domains, o
+# Nextcloud rechaza con HTTP 400 todo pedido cuya cabecera Host sea
+# "nextcloud". Desde el navegador no se nota, porque ahi el Host es
+# 127.0.0.1; lo que se rompe es que OTRO servicio del grupo le hable por su
+# nombre de red, que es justo lo que hace el flujo F03 del punto 13 para subir
+# su informe. El indice 1 venia con un "localhost" repetido.
+occ config:system:set trusted_domains 1 --value=nextcloud >/dev/null
+
 registro "Ajustes de seguridad."
 # Sin esto, cualquiera del equipo puede generar un enlace publico sin clave y
 # el control de acceso del punto 12 deja de significar nada.
@@ -208,8 +219,23 @@ occ config:app:set core shareapi_allow_links --value="no"
 occ config:app:set core shareapi_enforce_links_password --value="yes"
 # El registro de auditoria es lo que permite responder "quien bajo que y
 # cuando", que es la mitad de lo que sirve tener gestion documental.
+# Sin esto la auditoria no sirve de nada: admin_audit escribe sus anotaciones
+# en nivel "info" y el nivel por defecto de Nextcloud es "warning" (2), asi que
+# el archivo queda en cero bytes y parece que estuviera funcionando. Se comprobo
+# generando una accion y mirando el archivo, no leyendo la documentacion.
+occ config:system:set loglevel --value=1 >/dev/null
+
 occ app:enable admin_audit >/dev/null 2>&1 || registro "admin_audit no disponible en esta imagen."
-occ config:app:set admin_audit logfile --value="/var/www/html/data/audit.log" 2>/dev/null || true
+# Esta es la unica llamada con una ruta absoluta como argumento, y Git Bash la
+# reescribiria a C:/Program Files/Git/var/... MSYS_NO_PATHCONV va SOLO aca y no
+# exportada para todo el script: con ella puesta, el -o /dev/null de curl deja
+# de traducirse al dispositivo nulo de Windows y curl sale con el codigo 23.
+# Se llama a docker exec directo y no a la funcion occ, porque una asignacion
+# delante de una funcion de shell no se comporta igual que delante de un
+# programa.
+MSYS_NO_PATHCONV=1 docker exec -u www-data "$CONTENEDOR" php occ \
+    config:app:set admin_audit logfile --value="/var/www/html/data/audit.log" \
+    2>/dev/null || true
 
 registro "Listo."
 echo

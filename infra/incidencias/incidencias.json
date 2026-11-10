@@ -228,7 +228,7 @@
     },
     {
       "ref": "INC-08",
-      "resumen": "sequelize.sync({alter:true}) en el arranque recrea las claves foraneas y acumulo 8 restricciones UNIQUE duplicadas en mesas",
+      "resumen": "sequelize.sync({alter:true}) en el arranque acumulo 8 restricciones UNIQUE duplicadas en mesas",
       "categoria": "Base de datos",
       "severidad": "major",
       "prioridad": "high",
