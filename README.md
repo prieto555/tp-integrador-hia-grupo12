@@ -38,6 +38,21 @@ touch ../prometheus/.token-alertas
 docker compose --profile app --profile monitoreo up -d --build
 ```
 
+> ⚠️ **Mientras los tres PR no esten mergeados, esto NO se puede levantar
+> completo desde una sola rama.** El `docker-compose.yml` vive en
+> `feature/2-sql-replicacion` y los scripts y la configuracion de Mantis,
+> Nextcloud y n8n viven en `feature/5-procesos`. Y como el compose **monta**
+> archivos de esas rutas, cambiar de rama se los lleva del disco: cambiar a la
+> rama 2 borra `infra/incidencias/config_inc.php`, el contenedor de Mantis se
+> queda sin configuracion y pasa a devolver **HTTP 500 en todas sus paginas**.
+> Hasta que los PR entren a `develop`, para correr el laboratorio completo hay
+> que armar una rama que los junte:
+>
+> ```bash
+> git checkout -b integracion develop
+> git merge feature/2-sql-replicacion feature/3-app-cicd feature/5-procesos
+> ```
+
 > Es el mismo tropiezo que la incidencia **INC-17**: un supuesto sobre el
 > entorno que funcionaba en la maquina donde se escribio y no en un clon
 > limpio. Por eso esta escrito aca y no solo en la cabeza de alguien.
