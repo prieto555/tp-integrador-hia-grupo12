@@ -30,3 +30,6 @@ desktop.ini
 # --- Logs ---
 *.log
 npm-debug.log*
+
+# Punto 11: token de API de Mantis, emitido por preparar-mantis.sh
+infra/incidencias/.token-api

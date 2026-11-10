@@ -1,0 +1,264 @@
+{
+  "name": "F01 - Alerta de Prometheus a incidencia en Mantis",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alerta",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": { "rawBody": false }
+      },
+      "id": "f0100000-0000-4000-8000-000000000001",
+      "name": "Webhook de Alertmanager",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-860, 300],
+      "webhookId": "f0100000-0000-4000-8000-000000000001",
+      "credentials": {
+        "httpHeaderAuth": { "id": "CRED_WEBHOOK_ALERTAS", "name": "Cabecera de alertas" }
+      },
+      "notesInFlow": true,
+      "notes": "Pide una cabecera secreta. Sin esto, cualquiera que llegue al puerto puede abrir incidencias falsas."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validacion de lo que llega. Un webhook es una puerta abierta: lo que\n// entra por ahi no se usa sin mirarlo primero.\n//\n// Alertmanager manda {status, alerts:[{labels, annotations, startsAt...}]}.\n// Si falta algo de eso, no es Alertmanager y se descarta.\n\nconst cuerpo = $input.first().json.body ?? $input.first().json;\n\nif (!cuerpo || typeof cuerpo !== 'object') {\n  throw new Error('El cuerpo no es un objeto JSON.');\n}\nif (!Array.isArray(cuerpo.alerts) || cuerpo.alerts.length === 0) {\n  throw new Error('No viene el arreglo \"alerts\".');\n}\nif (!['firing', 'resolved'].includes(cuerpo.status)) {\n  throw new Error(`Estado desconocido: ${cuerpo.status}`);\n}\n\nconst LARGO_MAX = 500;\nconst limpiar = (t) => String(t ?? '')\n  .replace(/[\\u0000-\\u001f]/g, ' ')   // control: nada de saltos raros\n  .slice(0, LARGO_MAX)\n  .trim();\n\nreturn cuerpo.alerts.map((a) => {\n  const etiquetas = a.labels || {};\n  const textos = a.annotations || {};\n  if (!etiquetas.alertname) {\n    throw new Error('Una alerta no trae alertname.');\n  }\n  return {\n    json: {\n      estado: cuerpo.status,\n      nombre: limpiar(etiquetas.alertname),\n      severidad: limpiar(etiquetas.severity || 'warning'),\n      servicio: limpiar(etiquetas.job || etiquetas.instance || 'desconocido'),\n      resumen: limpiar(textos.summary || etiquetas.alertname),\n      detalle: limpiar(textos.description || ''),\n      porque: limpiar(textos.umbral || textos.justificacion || ''),\n      desde: limpiar(a.startsAt || ''),\n      // La huella es lo que evita abrir 40 incidencias por la misma caida.\n      huella: `${limpiar(etiquetas.alertname)}|${limpiar(etiquetas.job || etiquetas.instance || '')}`,\n    },\n  };\n});"
+      },
+      "id": "f0100000-0000-4000-8000-000000000002",
+      "name": "Validar y normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-640, 300],
+      "notesInFlow": true,
+      "notes": "Si algo no cuadra, lanza error y el flujo entero se marca como fallido"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "firing",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.severidad }}",
+              "rightValue": "critical",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0100000-0000-4000-8000-000000000003",
+      "name": "Es critica y esta activa",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-420, 300],
+      "notesInFlow": true,
+      "notes": "Solo las criticas abren incidencia. Una de aviso que abre ticket entrena al equipo a ignorar los tickets."
+    },
+    {
+      "parameters": {
+        "url": "=http://mantis/api/rest/issues?filter_id=assigned&page_size=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 10000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "f0100000-0000-4000-8000-000000000004",
+      "name": "Buscar si ya esta abierta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 220],
+      "credentials": {
+        "httpHeaderAuth": { "id": "CRED_MANTIS_API", "name": "Token de API de Mantis" }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "notesInFlow": true,
+      "notes": "Si Mantis no responde, se sigue igual: es preferible una incidencia repetida a ninguna"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Se decide si hay que abrir una incidencia nueva o si ya existe una por\n// lo mismo. El criterio es la huella (alerta + servicio) buscada en el\n// resumen de las incidencias abiertas.\n//\n// Si la consulta a Mantis fallo, abiertas queda vacio y se abre igual.\n// Entre un duplicado y una caida sin registrar, el duplicado es mejor.\n\nconst alerta = $('Es critica y esta activa').first().json;\nconst respuesta = $input.first().json;\nconst abiertas = Array.isArray(respuesta?.issues) ? respuesta.issues : [];\n\nconst yaExiste = abiertas.find((i) =>\n  String(i.summary || '').includes(`[${alerta.huella}]`) &&\n  !['closed', 'resolved'].includes(String(i.status?.name || '').toLowerCase())\n);\n\nreturn [{\n  json: {\n    ...alerta,\n    duplicada: Boolean(yaExiste),\n    idExistente: yaExiste ? yaExiste.id : null,\n    consultaFallo: !Array.isArray(respuesta?.issues),\n  },\n}];"
+      },
+      "id": "f0100000-0000-4000-8000-000000000005",
+      "name": "Decidir si es duplicada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [20, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $json.duplicada }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0100000-0000-4000-8000-000000000006",
+      "name": "Es nueva",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [240, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mantis/api/rest/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  summary: '[' + $json.huella + '] ' + $json.resumen,\n  description: 'Incidencia abierta automaticamente por n8n a partir de una alerta de Prometheus.\\n\\nAlerta: ' + $json.nombre + '\\nServicio: ' + $json.servicio + '\\nSeveridad: ' + $json.severidad + '\\nActiva desde: ' + $json.desde + '\\n\\nDescripcion de la regla:\\n' + $json.detalle + '\\n\\nPor que ese umbral:\\n' + ($json.porque || '(la regla no lo documenta)') + '\\n\\nEsta incidencia se cierra sola cuando llegue el aviso de resuelto.',\n  additional_information: 'Generada por el flujo F01. Si se repite la misma alerta mientras esta incidencia siga abierta, no se abre otra: se agrega una nota.',\n  category: { name: 'Monitoreo' },\n  project: { name: 'RestoYa' },\n  priority: { name: 'urgent' },\n  severity: { name: 'major' },\n  reproducibility: { name: 'always' },\n  tags: [{ name: 'automatica' }, { name: 'monitoreo' }]\n}) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 15000 }
+      },
+      "id": "f0100000-0000-4000-8000-000000000007",
+      "name": "Abrir incidencia en Mantis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 120],
+      "credentials": {
+        "httpHeaderAuth": { "id": "CRED_MANTIS_API", "name": "Token de API de Mantis" }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://mantis/api/rest/issues/{{ $json.idExistente }}/notes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'La misma alerta volvio a dispararse (' + $json.desde + '). No se abre una incidencia nueva.' }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 15000 }
+      },
+      "id": "f0100000-0000-4000-8000-000000000008",
+      "name": "Agregar nota a la existente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 320],
+      "credentials": {
+        "httpHeaderAuth": { "id": "CRED_MANTIS_API", "name": "Token de API de Mantis" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "automatizacion@restoya.test",
+        "toEmail": "incidencias@restoya.test",
+        "subject": "=[CRITICA] {{ $('Decidir si es duplicada').first().json.resumen }}",
+        "emailFormat": "text",
+        "text": "=Se abrio la incidencia #{{ $json.issue ? $json.issue.id : 's/d' }} en Mantis.\n\nAlerta: {{ $('Decidir si es duplicada').first().json.nombre }}\nServicio: {{ $('Decidir si es duplicada').first().json.servicio }}\nActiva desde: {{ $('Decidir si es duplicada').first().json.desde }}\n\n{{ $('Decidir si es duplicada').first().json.detalle }}\n\nVer: http://localhost:8089/view.php?id={{ $json.issue ? $json.issue.id : '' }}",
+        "options": {}
+      },
+      "id": "f0100000-0000-4000-8000-000000000009",
+      "name": "Avisar al equipo",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [680, 120],
+      "credentials": {
+        "smtp": { "id": "CRED_SMTP_MAILPIT", "name": "Mailpit del laboratorio" }
+      },
+      "onError": "continueRegularOutput",
+      "notesInFlow": true,
+      "notes": "Si el correo falla, la incidencia ya quedo abierta: no se deshace nada"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ recibido: true }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "f0100000-0000-4000-8000-00000000000a",
+      "name": "Responder a Alertmanager",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 220],
+      "notesInFlow": true,
+      "notes": "Alertmanager reintenta si no recibe 2xx. Hay que contestarle siempre."
+    },
+    {
+      "parameters": {},
+      "id": "f0100000-0000-4000-8000-00000000000b",
+      "name": "No es critica - no se abre nada",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [-200, 420]
+    },
+    {
+      "parameters": {
+        "content": "## F01 — De la alerta a la incidencia\n\n**Disparador:** Alertmanager hace POST a `/webhook/alerta` con una cabecera secreta.\n\n**Componentes que toca:** Prometheus/Alertmanager (origen), MantisBT (destino), Mailpit (aviso). Tres, que es lo que pide la consigna.\n\n**Validación:** el nodo \"Validar y normalizar\" rechaza lo que no tenga forma de notificación de Alertmanager, recorta a 500 caracteres y saca los caracteres de control. Un webhook es una puerta abierta.\n\n**Lo que NO hace, a propósito:**\n- No reinicia nada. Una automatización que reinicia servicios sola, con un disparador que entra por la red, es un apagado remoto esperando que alguien lo encuentre.\n- No abre incidencia por las alertas de aviso (`warning`). Un sistema que abre ticket por todo entrena al equipo a ignorar los tickets.\n\n**Si Mantis no responde:** se abre igual. Entre una incidencia duplicada y una caída sin registrar, el duplicado es el error barato.",
+        "height": 480,
+        "width": 420
+      },
+      "id": "f0100000-0000-4000-8000-00000000000c",
+      "name": "Nota - como funciona",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-860, -240]
+    }
+  ],
+  "connections": {
+    "Webhook de Alertmanager": { "main": [[{ "node": "Validar y normalizar", "type": "main", "index": 0 }]] },
+    "Validar y normalizar": { "main": [[{ "node": "Es critica y esta activa", "type": "main", "index": 0 }]] },
+    "Es critica y esta activa": {
+      "main": [
+        [{ "node": "Buscar si ya esta abierta", "type": "main", "index": 0 }],
+        [{ "node": "No es critica - no se abre nada", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar si ya esta abierta": { "main": [[{ "node": "Decidir si es duplicada", "type": "main", "index": 0 }]] },
+    "Decidir si es duplicada": { "main": [[{ "node": "Es nueva", "type": "main", "index": 0 }]] },
+    "Es nueva": {
+      "main": [
+        [{ "node": "Abrir incidencia en Mantis", "type": "main", "index": 0 }],
+        [{ "node": "Agregar nota a la existente", "type": "main", "index": 0 }]
+      ]
+    },
+    "Abrir incidencia en Mantis": { "main": [[{ "node": "Avisar al equipo", "type": "main", "index": 0 }]] },
+    "Avisar al equipo": { "main": [[{ "node": "Responder a Alertmanager", "type": "main", "index": 0 }]] },
+    "Agregar nota a la existente": { "main": [[{ "node": "Responder a Alertmanager", "type": "main", "index": 0 }]] },
+    "No es critica - no se abre nada": { "main": [[{ "node": "Responder a Alertmanager", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Argentina/Jujuy",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {}
+}
