@@ -1,0 +1,343 @@
+# Integracion continua (punto 8).
+#
+# Lo que tiene que impedir este archivo: que algo roto llegue a develop o a
+# main. Por eso las verificaciones no son decorativas: cada una existe porque
+# algo de esta lista ya nos paso de verdad durante el trabajo.
+#
+#   - "humo" levanta el sistema entero con docker compose y le pega a la API.
+#     Es la unica verificacion que hubiera atajado los dos errores mas feos
+#     que tuvimos: el backend reiniciandose en bucle por una variable que no
+#     estaba declarada (punto 14) y nginx devolviendo 502 porque resolvia el
+#     nombre "backend" una sola vez (punto 10). Ninguna prueba unitaria los
+#     agarraba: los dos solo aparecen con los contenedores levantados.
+#
+#   - "auditoria" corre npm audit. El punto 14 dejo el backend en 0 criticas y
+#     0 altas; esto es lo que impide volver atras sin enterarse.
+#
+#   - "frontend" compila en modo produccion. En Angular, compilar es el
+#     verificador de tipos: una plantilla que lee una propiedad que no existe
+#     falla aca y no en el navegador del profesor.
+#
+# El permiso por defecto es solo lectura: este archivo no publica nada. De
+# publicar se encarga entrega.yml.
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**", "fix/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Si se empujan dos commits seguidos, se cancela la corrida vieja. No tiene
+# sentido pagar minutos por validar codigo que ya quedo atras.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend: sintaxis, dependencias reproducibles y vulnerabilidades.
+  # ---------------------------------------------------------------------------
+  backend:
+    name: Backend — sintaxis y dependencias
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # "npm ci" y no "npm install": ci exige que package-lock.json este al dia
+      # y falla si no coincide con package.json. Instalar algo y olvidarse de
+      # subir el lock es un clasico, y rompe la imagen de Docker, que tambien
+      # usa npm ci.
+      - name: Instalar dependencias
+        working-directory: backend
+        run: npm ci
+
+      # node --check analiza cada archivo sin ejecutarlo. No reemplaza a las
+      # pruebas, pero agarra el error de tipeo que deja el servidor sin
+      # arrancar, que es exactamente lo que paso en el punto 14.
+      - name: Verificar la sintaxis de todos los archivos
+        working-directory: backend
+        run: |
+          set -eu
+          archivos=$(find . -name '*.js' -not -path './node_modules/*')
+          echo "Revisando $(echo "$archivos" | wc -l) archivos."
+          for a in $archivos; do node --check "$a"; done
+          echo "Sintaxis correcta."
+
+  # ---------------------------------------------------------------------------
+  # Frontend: compilacion de produccion. En Angular esto es el verificador de
+  # tipos de toda la aplicacion, plantillas incluidas.
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend — compilacion de produccion
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: frontend
+        run: npm ci
+
+      - name: Compilar
+        working-directory: frontend
+        run: npm run build -- --configuration production
+
+      # El artefacto queda guardado para poder mirarlo si algo sale mal, y
+      # para comparar el tamano del paquete entre corridas.
+      - name: Guardar el paquete compilado
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Vulnerabilidades de dependencias (punto 14).
+  #
+  # Se separan produccion y desarrollo a proposito: una vulnerabilidad en una
+  # dependencia de produccion del frontend viaja al navegador del usuario; una
+  # de desarrollo corre en la maquina que compila. No son la misma gravedad y
+  # mezclarlas infla el numero sin decir nada.
+  # ---------------------------------------------------------------------------
+  auditoria:
+    name: Auditoria de dependencias
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Backend (todas las dependencias)
+        working-directory: backend
+        run: npm audit --audit-level=high
+
+      - name: Frontend (solo produccion)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+
+      # Las de desarrollo del frontend se informan pero no frenan la corrida:
+      # Angular arrastra vulnerabilidades en su cadena de compilacion que no
+      # tienen parche y que no llegan al navegador. Frenar por eso dejaria el
+      # pipeline en rojo permanente, que es peor que no tenerlo.
+      - name: Frontend (desarrollo, solo informativo)
+        working-directory: frontend
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  # ---------------------------------------------------------------------------
+  # Prueba de humo: levantar el sistema de verdad y pegarle.
+  #
+  # Es la verificacion que mas vale de las cuatro. Se usa DB_SYNC=create y la
+  # base vacia: los seis millones de filas del punto 4 no entran en un runner
+  # y tampoco hacen falta para saber si la aplicacion arranca y responde.
+  # ---------------------------------------------------------------------------
+  humo:
+    name: Prueba de humo (docker compose)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # El .env de la corrida se genera aca con valores descartables. No hay
+      # ningun secreto real: el runner se destruye al terminar y esta base no
+      # existe en ningun otro lado.
+      - name: Preparar el entorno de prueba
+        working-directory: infra/compose
+        run: |
+          set -eu
+          cat > .env <<'FIN'
+          # pgAdmin rechaza los dominios reservados (.test, .invalid...) y se
+          # reinicia en bucle diciendo "does not appear to be a valid email
+          # address". Por eso example.com y no example.test, que seria lo
+          # correcto para datos de prueba segun el RFC 2606.
+          DB_NAME=restoyadb
+          DB_USER=restoya
+          DB_PORT_HOST=5433
+          PGADMIN_EMAIL=ci@example.com
+          PGADMIN_PORT=5050
+          BACKUP_INTERVALO=86400
+          BACKUP_RETENER=1
+          ADMIN_EMAIL=admin@example.test
+          FRONTEND_URL=http://localhost:8080
+          FRONTEND_PORT=8080
+          DB_SYNC=create
+          DB_SEED=true
+          CORS_ORIGENES=http://localhost:8080
+          LIMITE_LOGIN=10
+          LIMITE_API=300
+          LIMITE_CHATBOT=10
+          SWAGGER_HABILITADO=false
+          GRAFANA_USER=admin
+          PROMETHEUS_PORT=9090
+          ALERTMANAGER_PORT=9093
+          GRAFANA_PORT=3001
+          DB_REPLICA_PORT_HOST=5434
+          REPLICACION_USER=replicador
+          REPLICACION_RANURA=replica_1
+          FIN
+          # Las claves se generan al vuelo y no se imprimen.
+          {
+            echo "DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "PGADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "JWT_SECRET=$(openssl rand -base64 48 | tr -d '/+=')"
+            echo "ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "GRAFANA_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "REPLICACION_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+          } >> .env
+          chmod 600 .env
+
+      # Valida el YAML y que no falte ninguna variable obligatoria, antes de
+      # gastar varios minutos construyendo imagenes.
+      - name: Validar el docker-compose.yml
+        working-directory: infra/compose
+        run: docker compose --profile app config > /dev/null
+
+      # El volumen pgdata esta declarado como "external" en el compose, y es a
+      # proposito: existia antes que el compose, en la maquina del equipo, y
+      # declararlo normal lo habria recreado vacio, perdiendo los datos.
+      # La contrapartida es que un entorno limpio tiene que crearlo primero.
+      # Esto lo descubrio esta misma prueba de humo en su primera corrida:
+      # "external volume restoya_pgdata not found".
+      - name: Crear el volumen externo
+        run: docker volume create restoya_pgdata
+
+      - name: Levantar la aplicacion
+        working-directory: infra/compose
+        run: docker compose --profile app up -d --build
+
+      # Se espera a la API y no al frente. El frente es estatico: nginx lo
+      # sirve en cuanto arranca, asi que esperar a que responda no dice nada
+      # sobre el backend. La primera version de esta prueba esperaba a "/" y
+      # despues fallaba con 502 en la peticion siguiente, porque el backend
+      # todavia estaba creando el esquema y sembrando datos.
+      - name: Esperar a que la API responda
+        working-directory: infra/compose
+        run: |
+          set -eu
+          for i in $(seq 1 90); do
+            # OJO con la forma de capturar el codigo. Escrito como
+            #   codigo=$(curl ... -w %{http_code} || echo 000)
+            # cuando curl no puede conectarse imprime 000 por -w Y ADEMAS
+            # devuelve error, asi que corre el echo y agrega otro: codigo
+            # queda valiendo dos veces 000, que no coincide con ningun patron
+            # del case y cae en *), que es la rama de exito. El bucle se
+            # cortaba en el primer intento, justo cuando el backend todavia
+            # no estaba. Hay que asignar en el ||, no encadenar la salida.
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/productos) || codigo=000
+            case "$codigo" in
+              000|502|503|504)
+                if [ "$i" = 90 ]; then
+                  echo "La API no respondio en 180 s (ultimo codigo: $codigo)."
+                  docker compose --profile app ps
+                  docker compose --profile app logs --tail=150
+                  exit 1
+                fi
+                sleep 2
+                ;;
+              *)
+                echo "La API responde con HTTP $codigo en el intento $i."
+                break
+                ;;
+            esac
+          done
+
+      # Las tres cosas que tienen que andar: el frente se sirve, nginx hace de
+      # proxy de /api hasta el backend, y el backend llega a la base.
+      - name: Verificar el camino completo
+        working-directory: infra/compose
+        run: |
+          set -eu
+
+          echo "== 1. el frente se sirve =="
+          curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8080/
+
+          echo "== 2. nginx hace de proxy hasta el backend =="
+          # Un 404 del backend tambien sirve: significa que la peticion llego.
+          # Lo que no puede pasar es un 502, que es nginx sin backend detras.
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/productos)
+          echo "GET /api/productos -> $codigo"
+          case "$codigo" in
+            502|503|504) echo "nginx no alcanza al backend."; exit 1 ;;
+            000) echo "Sin respuesta."; exit 1 ;;
+          esac
+
+          echo "== 3. el backend llega a la base =="
+          # /api/productos sale de una consulta real: si contesta 200 con un
+          # arreglo, la cadena nginx -> backend -> PostgreSQL esta entera.
+          cuerpo=$(curl -fsS http://127.0.0.1:8080/api/productos)
+          echo "$cuerpo" | head -c 200; echo
+          echo "$cuerpo" | grep -q '^\[' || { echo "No devolvio un arreglo."; exit 1; }
+
+          echo "== 4. /metrics NO es alcanzable desde afuera (punto 14) =="
+          # OJO con el codigo de estado: nginx sirve una aplicacion de una
+          # sola pagina, asi que "location /" tiene try_files ... /index.html
+          # y CUALQUIER ruta desconocida devuelve 200 con el index de Angular.
+          # La primera version de esta comprobacion miraba el 200 y daba por
+          # expuestas unas metricas que en realidad no salian. Lo que hay que
+          # mirar es QUE devolvio, no con que codigo.
+          cuerpo=$(curl -s http://127.0.0.1:8080/metrics)
+          if echo "$cuerpo" | grep -qE "^(# HELP|# TYPE|http_requests_total|nodejs_heap_size_limit_bytes)"; then
+            echo "Las metricas quedaron publicadas a traves de nginx."
+            exit 1
+          fi
+          echo "Bien: /metrics devuelve el index de la aplicacion, no las metricas."
+
+          echo "== 5. ningun contenedor quedo reiniciandose =="
+          # Lo que hay que mirar no es el estado de ahora sino el CONTADOR DE
+          # REINICIOS. Un contenedor en bucle pasa la mayor parte del tiempo
+          # en "running": si se mira el estado en un instante cualquiera, el
+          # bucle del punto 14 (una variable sin declarar) habria pasado
+          # desapercibido. RestartCount > 0 no se puede disimular.
+          docker compose --profile app ps -a \
+            --format '{{.Name}}	{{.State}}	{{.Status}}'
+          echo
+
+          malos=0
+          for c in $(docker compose --profile app ps -aq); do
+            datos=$(docker inspect -f '{{.Name}} {{.State.Status}} {{.RestartCount}}' "$c")
+            nombre=$(echo "$datos" | cut -d' ' -f1)
+            estado=$(echo "$datos" | cut -d' ' -f2)
+            reinicios=$(echo "$datos" | cut -d' ' -f3)
+            echo "$nombre: estado=$estado reinicios=$reinicios"
+            case "$estado" in
+              restarting|exited|dead|paused)
+                echo "  -> $nombre no esta corriendo."; malos=1 ;;
+            esac
+            if [ "$reinicios" -gt 0 ]; then
+              echo "  -> $nombre se reinicio $reinicios vez/veces."; malos=1
+            fi
+          done
+
+          if [ "$malos" = 1 ]; then
+            docker compose --profile app logs --tail=150
+            exit 1
+          fi
+          echo "Bien: ninguno se reinicio."
+
+      - name: Registro de los contenedores
+        if: always()
+        working-directory: infra/compose
+        run: docker compose --profile app logs --tail=200
+
+      - name: Bajar todo
+        if: always()
+        working-directory: infra/compose
+        run: docker compose --profile app down -v
