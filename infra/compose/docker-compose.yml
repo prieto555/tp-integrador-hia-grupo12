@@ -40,11 +40,17 @@ services:
       - log_min_duration_statement=500
       - -c
       - shared_preload_libraries=pg_stat_statements
+      # El pg_hba sale del repositorio y no del volumen (punto 6). Antes lo
+      # generaba la imagen adentro del volumen: no estaba versionado y para
+      # cambiarlo habia que editarlo a mano dentro del contenedor.
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
     ports:
       # Atado a loopback a proposito: la base no se expone a la red.
       - "127.0.0.1:${DB_PORT_HOST:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ../postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     networks:
       - interna
     healthcheck:
@@ -53,6 +59,51 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Replica por streaming (punto 6). Perfil aparte: clonar la base de cuatro
+  # gigas lleva un rato y no hace falta para programar.
+  #
+  #   docker compose --profile replica up -d
+  #
+  # La primera vez clona con pg_basebackup; despues arranca directo.
+  # ---------------------------------------------------------------------------
+  db-replica:
+    profiles: ["replica"]
+    image: postgres:16-alpine
+    container_name: restoya_db_replica
+    restart: unless-stopped
+    # Entrypoint propio: clona si hace falta y despues le pasa el control al
+    # entrypoint de la imagen oficial.
+    entrypoint: ["/bin/sh", "/iniciar-replica.sh"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARIO_HOST: db
+      PRIMARIO_PUERTO: 5432
+      REPLICACION_USER: ${REPLICACION_USER:-replicador}
+      REPLICACION_PASSWORD: ${REPLICACION_PASSWORD:?falta REPLICACION_PASSWORD en el .env}
+      RANURA: ${REPLICACION_RANURA:-replica_1}
+    volumes:
+      - ../postgres/iniciar-replica.sh:/iniciar-replica.sh:ro
+      - pgdata_replica:/var/lib/postgresql/data
+    # Puerto propio para poder consultarla y comprobar que lee pero no escribe.
+    ports:
+      - "127.0.0.1:${DB_REPLICA_PORT_HOST:-5434}:5432"
+    networks:
+      - interna
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # En una replica pg_isready devuelve 0 igual que en un primario: lo que
+      # dice es que acepta conexiones, no que pueda escribir.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      # La primera corrida clona cuatro gigas. Sin este margen, Docker la mata
+      # a mitad de la copia y vuelve a empezar para siempre.
+      start_period: 600s
 
   pgadmin:
     image: dpage/pgadmin4:9.8
@@ -340,6 +391,8 @@ volumes:
     name: restoya_pgdata
   pgadmin_data:
     name: restoya_pgadmin_data
+  pgdata_replica:
+    name: restoya_pgdata_replica
   prometheus_data:
     name: restoya_prometheus_data
   alertmanager_data:
