@@ -1,0 +1,87 @@
+# Configuración del túnel de Cloudflare (punto 9).
+#
+# ESTA ES LA PLANTILLA, y es el archivo que se versiona. preparar-tunel.sh
+# reemplaza DOMINIO_PUBLICO por el valor del .env y escribe config.generado.yml,
+# que es el que monta el contenedor y está en el .gitignore.
+#
+# ───────────────────────────────────────────────────────────────────────────────
+# Por qué la configuración vive acá y no en el panel de Cloudflare
+# ───────────────────────────────────────────────────────────────────────────────
+# Un túnel se puede manejar de dos formas:
+#
+#   a) Con un token (`cloudflared tunnel run --token ...`). Las reglas de
+#      encaminamiento viven en el panel de Cloudflare. Es más cómodo de
+#      arrancar y NO queda en el repositorio: nadie más puede reproducir la
+#      instalación, y nadie puede revisar en un PR qué quedó publicado.
+#
+#   b) Con un archivo de credenciales y este archivo de configuración. Las
+#      reglas se versionan.
+#
+# Se eligió (b), por lo mismo que `pg_hba.conf`, `config_inc.php` y el
+# aprovisionamiento de Grafana salen del repositorio: **qué está publicado en
+# Internet es una decisión de seguridad, y una decisión de seguridad que vive
+# en el panel de alguien no se puede auditar ni revisar.**
+#
+# ───────────────────────────────────────────────────────────────────────────────
+# Qué se publica, y sobre todo qué NO
+# ───────────────────────────────────────────────────────────────────────────────
+# Se publica UNA sola cosa: la aplicación, a través de nginx, que sirve el
+# frente y hace de proxy de `/api/`. Nada más.
+#
+# Deliberadamente NO se publican, aunque el túnel podría hacerlo con dos
+# líneas cada uno:
+#
+#   | Servicio      | Puerto | Por qué no |
+#   |---------------|--------|------------|
+#   | pgAdmin       | 5050   | consola de la base: con eso se lee y se borra todo |
+#   | Grafana       | 3001   | interfaz administrativa, y muestra la forma interna del sistema |
+#   | Prometheus    | 9090   | expone todas las métricas y los destinos sin autenticación |
+#   | Alertmanager  | 9093   | permite silenciar alertas: apagar el monitoreo desde afuera |
+#   | MantisBT      | 8089   | los problemas del sistema, con detalle de cómo explotarlos |
+#   | Nextcloud     | 8081   | la documentación interna del proyecto |
+#   | n8n           | 5678   | tiene las credenciales de Mantis y Nextcloud adentro |
+#   | Mailpit       | 8025   | buzón sin autenticación |
+#   | PostgreSQL    | 5433/4 | la base, directamente |
+#
+# El túnel **no abre puertos en el router**: el conector sale hacia Cloudflare.
+# Eso significa que lo que no está en este archivo no es alcanzable desde
+# Internet, y no hay forma de equivocarse "dejando un puerto abierto".
+#
+# Es además la única opción posible acá: el proveedor de Internet de casa tiene
+# CGNAT, así que no hay reenvío de puertos ni IP pública propia. El túnel no es
+# una comodidad, es el único camino.
+
+tunnel: TUNEL_NOMBRE
+credentials-file: /etc/cloudflared/credenciales.json
+
+# Sin esto, las métricas del propio conector no se pueden consultar. Escucha
+# dentro del contenedor y no se publica.
+metrics: 0.0.0.0:2000
+
+# No tiene sentido reintentar para siempre en silencio: si el conector no puede
+# salir, conviene verlo en el registro.
+retries: 5
+
+ingress:
+  # 1. La aplicación. nginx sirve el frente y hace de proxy de /api/, así que
+  #    con esta única regla queda publicada la aplicación completa y nada más.
+  #    El backend NO publica puerto: sólo se llega a él por este camino.
+  - hostname: DOMINIO_PUBLICO
+    service: http://frontend:80
+    originRequest:
+      # El origen es HTTP, y está bien: el tramo cliente → Cloudflare va por
+      # HTTPS (certificado de Cloudflare) y el tramo Cloudflare → nginx va por
+      # dentro del túnel, cifrado, hasta la red interna de Docker. En ningún
+      # momento hay tráfico en claro por Internet.
+      connectTimeout: 10s
+      # Que el navegador reciba el Host real, no el del contenedor: nginx usa
+      # $host y la aplicación arma URLs con eso.
+      httpHostHeader: DOMINIO_PUBLICO
+
+  # 2. Cualquier otra cosa: 404.
+  #
+  #    Esta regla es obligatoria —cloudflared no arranca sin una regla final
+  #    sin hostname— pero además es la que importa: si alguien apunta otro
+  #    nombre a este túnel, o si mañana se agrega un hostname al panel por
+  #    error, lo que recibe es un 404 y no un servicio interno.
+  - service: http_status:404
