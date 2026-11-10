@@ -297,12 +297,36 @@ jobs:
           echo "Bien: /metrics devuelve el index de la aplicacion, no las metricas."
 
           echo "== 5. ningun contenedor quedo reiniciandose =="
-          docker compose --profile app ps
-          if docker compose --profile app ps --format '{{.Name}} {{.State}}' | grep -v 'running'; then
-            echo "Hay servicios que no estan corriendo."
-            docker compose --profile app logs --tail=120
+          # Lo que hay que mirar no es el estado de ahora sino el CONTADOR DE
+          # REINICIOS. Un contenedor en bucle pasa la mayor parte del tiempo
+          # en "running": si se mira el estado en un instante cualquiera, el
+          # bucle del punto 14 (una variable sin declarar) habria pasado
+          # desapercibido. RestartCount > 0 no se puede disimular.
+          docker compose --profile app ps -a \
+            --format '{{.Name}}	{{.State}}	{{.Status}}'
+          echo
+
+          malos=0
+          for c in $(docker compose --profile app ps -aq); do
+            datos=$(docker inspect -f '{{.Name}} {{.State.Status}} {{.RestartCount}}' "$c")
+            nombre=$(echo "$datos" | cut -d' ' -f1)
+            estado=$(echo "$datos" | cut -d' ' -f2)
+            reinicios=$(echo "$datos" | cut -d' ' -f3)
+            echo "$nombre: estado=$estado reinicios=$reinicios"
+            case "$estado" in
+              restarting|exited|dead|paused)
+                echo "  -> $nombre no esta corriendo."; malos=1 ;;
+            esac
+            if [ "$reinicios" -gt 0 ]; then
+              echo "  -> $nombre se reinicio $reinicios vez/veces."; malos=1
+            fi
+          done
+
+          if [ "$malos" = 1 ]; then
+            docker compose --profile app logs --tail=150
             exit 1
           fi
+          echo "Bien: ninguno se reinicio."
 
       - name: Registro de los contenedores
         if: always()
