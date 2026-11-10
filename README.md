@@ -27,8 +27,20 @@ repositorio. No son submódulos: se editan como carpetas normales.
 ```bash
 cd infra/compose
 cp .env.example .env     # completar las claves
+
+# Alertmanager monta este archivo (lleva el secreto que comparte con el
+# webhook de n8n del punto 13) y esta en el .gitignore, asi que en un clon
+# nuevo NO existe. Hay que crearlo antes: si no, Docker monta un archivo que
+# no esta y crea una CARPETA con ese nombre, y Alertmanager no arranca. Lo
+# llena despues infra/automatizacion/preparar-n8n.sh.
+touch ../prometheus/.token-alertas
+
 docker compose --profile app --profile monitoreo up -d --build
 ```
+
+> Es el mismo tropiezo que la incidencia **INC-17**: un supuesto sobre el
+> entorno que funcionaba en la maquina donde se escribio y no en un clon
+> limpio. Por eso esta escrito aca y no solo en la cabeza de alguien.
 
 | Dónde | Qué |
 |---|---|
