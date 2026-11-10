@@ -36,7 +36,7 @@ EXPOSE 3000
 # El .env NO va dentro de la imagen: las variables se inyectan al correr.
 # Una imagen con secretos adentro es una imagen que no se puede publicar.
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=240s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:3000/api/productos').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["dumb-init", "--"]

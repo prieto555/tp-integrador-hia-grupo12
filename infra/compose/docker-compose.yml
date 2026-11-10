@@ -8,6 +8,11 @@ services:
   db:
     image: postgres:16-alpine
     container_name: restoya_db
+    # Por defecto Docker da 64 MB de /dev/shm, y PostgreSQL usa memoria
+    # compartida para los hash join en paralelo. Con 64 MB, la consulta de
+    # la pantalla de cocina falla con "could not resize shared memory
+    # segment ... No space left on device". Ver docs/07-optimizacion-sql.md.
+    shm_size: 512m
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME}
@@ -114,6 +119,10 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       DB_DIALECT: postgres
+      # El arranque no toca el esquema. Ver docs/07-optimizacion-sql.md:
+      # sync({alter:true}) recreaba las claves foraneas en cada arranque.
+      DB_SYNC: ${DB_SYNC:-none}
+      DB_SEED: ${DB_SEED:-true}
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
