@@ -1,53 +1,75 @@
 {
+  "id": "restoya-f02-copias",
   "name": "F02 - Verificacion de las copias de seguridad",
+  "active": false,
   "nodes": [
     {
       "parameters": {
         "rule": {
-          "interval": [{ "field": "cronExpression", "expression": "0 30 3 * * *" }]
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 30 3 * * *"
+            }
+          ]
         }
       },
       "id": "f0200000-0000-4000-8000-000000000001",
       "name": "Todos los dias a las 3:30",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.4,
-      "position": [-900, 300],
+      "position": [
+        -900,
+        300
+      ],
       "notesInFlow": true,
       "notes": "Media hora despues de la copia del servicio de backups, que corre a las 3:00"
     },
     {
       "parameters": {
-        "command": "ls -la --time-style=+%Y-%m-%dT%H:%M:%S /copias/*.sql.gz 2>/dev/null | tail -20; echo '---'; ls /copias/*.sql.gz 2>/dev/null | wc -l"
+        "command": "# \"ls --time-style\" no existe en BusyBox, que es el ls de esta imagen: imprime\n# la ayuda y el flujo se queda sin datos. stat si esta, y da la fecha en\n# segundos desde la epoca, que no hay que interpretar.\nfor f in /copias/*.dump; do [ -e \"$f\" ] || continue;\n  printf '%s %s %s\\n' \"$(stat -c %s \"$f\")\" \"$(stat -c %Y \"$f\")\" \"$f\";\ndone\necho '---'\nls /copias/*.dump 2>/dev/null | wc -l"
       },
       "id": "f0200000-0000-4000-8000-000000000002",
       "name": "Listar las copias",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [-680, 300],
+      "position": [
+        -680,
+        300
+      ],
       "onError": "continueRegularOutput",
       "notesInFlow": true,
       "notes": "El volumen de copias se monta de solo lectura: este flujo verifica, no borra"
     },
     {
       "parameters": {
-        "jsCode": "// Se busca la copia mas reciente y se comprueban tres cosas distintas.\n// Las tres hacen falta, porque cada una falla de una forma propia:\n//\n//   1. QUE EXISTA UNA DE HOY. Un archivo de hace tres dias significa que\n//      el servicio de copias dejo de correr y nadie se entero. Es el fallo\n//      mas comun y el mas silencioso.\n//   2. QUE NO ESTE VACIA. Una copia de 20 bytes es pg_dump fallando y\n//      escribiendo el error en el archivo.\n//   3. QUE EL GZIP ESTE INTEGRO (nodo siguiente). Un archivo truncado\n//      pesa bien y no se puede restaurar.\n//\n// Lo que esto NO prueba es que la restauracion funcione. Eso solo lo\n// prueba restaurar, y esta anotado en las limitaciones del punto 13.\n\nconst salida = $input.first().json.stdout || '';\nconst error = $input.first().json.stderr || '';\n\nconst lineas = salida.split('\\n').filter((l) => l.includes('.sql.gz'));\n\nif (lineas.length === 0) {\n  return [{ json: {\n    ok: false,\n    motivo: 'NO HAY NINGUNA COPIA',\n    detalle: `El directorio /copias no tiene archivos .sql.gz.${error ? ' Error: ' + error : ''}`,\n    archivo: null,\n  } }];\n}\n\n// ls -la: permisos, enlaces, duenio, grupo, tamano, fecha, nombre\nconst copias = lineas.map((l) => {\n  const c = l.trim().split(/\\s+/);\n  return { bytes: Number(c[4]), fecha: c[5], ruta: c[6] };\n}).filter((c) => Number.isFinite(c.bytes) && c.ruta);\n\ncopias.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));\nconst ultima = copias[0];\n\nconst MINIMO_BYTES = 1024 * 100;           // 100 KB\nconst MAXIMA_EDAD_HORAS = 26;              // un dia mas margen\n\nconst edadHoras = (Date.now() - new Date(ultima.fecha).getTime()) / 3600000;\n\nif (!Number.isFinite(edadHoras)) {\n  return [{ json: { ok: false, motivo: 'FECHA ILEGIBLE', detalle: `No se pudo interpretar la fecha \"${ultima.fecha}\".`, archivo: ultima.ruta } }];\n}\nif (edadHoras > MAXIMA_EDAD_HORAS) {\n  return [{ json: {\n    ok: false,\n    motivo: 'LA COPIA ESTA VIEJA',\n    detalle: `La ultima copia es de hace ${edadHoras.toFixed(1)} h (${ultima.fecha}). El limite son ${MAXIMA_EDAD_HORAS} h. El servicio de copias no esta corriendo.`,\n    archivo: ultima.ruta, bytes: ultima.bytes,\n  } }];\n}\nif (ultima.bytes < MINIMO_BYTES) {\n  return [{ json: {\n    ok: false,\n    motivo: 'LA COPIA ESTA VACIA O CASI',\n    detalle: `${ultima.ruta} pesa ${ultima.bytes} bytes. Una copia real de esta base pesa cientos de megas: esto es pg_dump fallando y escribiendo el error adentro del archivo.`,\n    archivo: ultima.ruta, bytes: ultima.bytes,\n  } }];\n}\n\nreturn [{ json: {\n  ok: true,\n  archivo: ultima.ruta,\n  bytes: ultima.bytes,\n  megas: (ultima.bytes / 1048576).toFixed(1),\n  fecha: ultima.fecha,\n  edadHoras: edadHoras.toFixed(1),\n  cantidad: copias.length,\n} }];"
+        "jsCode": "// Se busca la copia mas reciente y se comprueban tres cosas distintas.\n// Las tres hacen falta, porque cada una falla de una forma propia:\n//\n//   1. QUE EXISTA UNA DE HOY. Un archivo de hace tres dias significa que\n//      el servicio de copias dejo de correr y nadie se entero. Es el fallo\n//      mas comun y el mas silencioso.\n//   2. QUE NO ESTE VACIA. Una copia de 20 bytes es pg_dump fallando y\n//      escribiendo el error en el archivo.\n//   3. QUE SEA UN VOLCADO DE VERDAD (nodo siguiente). Un archivo truncado\n//      pesa bien y no se puede restaurar.\n//\n// Sobre el formato: backup.sh usa \"pg_dump -Fc\", asi que las copias son\n// archivos .dump en el formato propio de PostgreSQL, NO .sql.gz. Buscar el\n// glob equivocado no da un error: da \"no hay ninguna copia\", que es una\n// incidencia falsa cada noche.\n//\n// Lo que esto NO prueba es que la restauracion funcione. Eso solo lo\n// prueba restaurar, y esta anotado en las limitaciones del punto 13.\n\nconst salida = $input.first().json.stdout || '';\nconst error = $input.first().json.stderr || '';\n\nconst lineas = salida.split('\\n').filter((l) => l.includes('.dump'));\n\nif (lineas.length === 0) {\n  return [{ json: {\n    ok: false,\n    motivo: 'NO HAY NINGUNA COPIA',\n    detalle: `El directorio /copias no tiene archivos .dump.${error ? ' Error: ' + error : ''}`,\n    archivo: null,\n  } }];\n}\n\n// El comando imprime tres campos por linea: bytes, segundos desde la epoca y\n// ruta. Nada de parsear fechas en texto ni de adivinar zonas horarias.\nconst copias = lineas.map((l) => {\n  const c = l.trim().split(/\\s+/);\n  return { bytes: Number(c[0]), epoca: Number(c[1]), ruta: c[2] };\n}).filter((c) => Number.isFinite(c.bytes) && Number.isFinite(c.epoca) && c.ruta);\n\nif (copias.length === 0) {\n  return [{ json: {\n    ok: false,\n    motivo: 'NO SE PUDO LEER EL LISTADO',\n    detalle: 'El comando devolvio lineas con .dump pero ninguna con el formato esperado (bytes, epoca, ruta).',\n    archivo: null,\n  } }];\n}\n\ncopias.sort((a, b) => b.epoca - a.epoca);\nconst ultima = copias[0];\n\nconst MINIMO_BYTES = 1024 * 100;           // 100 KB\nconst MAXIMA_EDAD_HORAS = 26;              // un dia mas margen\n\nconst edadHoras = (Date.now() / 1000 - ultima.epoca) / 3600;\nif (edadHoras > MAXIMA_EDAD_HORAS) {\n  return [{ json: {\n    ok: false,\n    motivo: 'LA COPIA ESTA VIEJA',\n    detalle: `La ultima copia es de hace ${edadHoras.toFixed(1)} h (${new Date(ultima.epoca * 1000).toISOString()}). El limite son ${MAXIMA_EDAD_HORAS} h. El servicio de copias no esta corriendo.`,\n    archivo: ultima.ruta, bytes: ultima.bytes,\n  } }];\n}\nif (ultima.bytes < MINIMO_BYTES) {\n  return [{ json: {\n    ok: false,\n    motivo: 'LA COPIA ESTA VACIA O CASI',\n    detalle: `${ultima.ruta} pesa ${ultima.bytes} bytes. Una copia real de esta base pesa cientos de megas: esto es pg_dump fallando y escribiendo el error adentro del archivo.`,\n    archivo: ultima.ruta, bytes: ultima.bytes,\n  } }];\n}\n\nreturn [{ json: {\n  ok: true,\n  archivo: ultima.ruta,\n  bytes: ultima.bytes,\n  megas: (ultima.bytes / 1048576).toFixed(1),\n  fecha: new Date(ultima.epoca * 1000).toISOString(),\n  edadHoras: edadHoras.toFixed(1),\n  cantidad: copias.length,\n} }];"
       },
       "id": "f0200000-0000-4000-8000-000000000003",
       "name": "Revisar fecha y tamano",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-460, 300]
+      "position": [
+        -460,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "conditions": [
             {
               "id": "o1",
               "leftValue": "={{ $json.ok }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -58,17 +80,23 @@
       "name": "Fecha y tamano correctos",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [-240, 300]
+      "position": [
+        -240,
+        300
+      ]
     },
     {
       "parameters": {
-        "command": "=gzip -t '{{ $json.archivo }}' && echo INTEGRO || echo CORRUPTO"
+        "command": "=head -c 5 '{{ $json.archivo }}' | grep -q PGDMP && echo INTEGRO || echo CORRUPTO"
       },
       "id": "f0200000-0000-4000-8000-000000000005",
-      "name": "Comprobar el gzip",
+      "name": "Comprobar que es un volcado",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
-      "position": [-20, 200],
+      "position": [
+        -20,
+        200
+      ],
       "onError": "continueRegularOutput",
       "notesInFlow": true,
       "notes": "gzip -t descomprime y verifica el CRC sin escribir nada. Un archivo truncado pesa bien y falla aca."
@@ -81,18 +109,27 @@
       "name": "Evaluar integridad",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [200, 200]
+      "position": [
+        200,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "conditions": [
             {
               "id": "i1",
               "leftValue": "={{ $json.ok }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -103,7 +140,10 @@
       "name": "Esta integra",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [420, 200]
+      "position": [
+        420,
+        200
+      ]
     },
     {
       "parameters": {
@@ -118,9 +158,15 @@
       "name": "Avisar que esta bien",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [640, 100],
+      "position": [
+        640,
+        100
+      ],
       "credentials": {
-        "smtp": { "id": "CRED_SMTP_MAILPIT", "name": "Mailpit del laboratorio" }
+        "smtp": {
+          "id": "CRED_SMTP_MAILPIT",
+          "name": "Mailpit del laboratorio"
+        }
       },
       "onError": "continueRegularOutput"
     },
@@ -130,22 +176,35 @@
         "url": "http://mantis/api/rest/issues",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  summary: '[COPIAS] ' + $json.motivo,\n  description: 'La verificacion automatica de las copias de seguridad fallo.\\n\\nMotivo: ' + $json.motivo + '\\n\\n' + $json.detalle + '\\n\\nArchivo revisado: ' + ($json.archivo || '(ninguno)') + '\\n\\nMientras esto no se arregle, el proyecto NO TIENE COPIA UTIL. Es la incidencia mas urgente que puede abrir este sistema: todo lo demas se vuelve a hacer, los datos no.',\n  additional_information: 'Abierta por el flujo F02 de n8n. Se verifica fecha, tamano e integridad del gzip; no se verifica que la restauracion funcione.',\n  category: { name: 'Infraestructura y Docker' },\n  project: { name: 'RestoYa' },\n  priority: { name: 'immediate' },\n  severity: { name: 'block' },\n  reproducibility: { name: 'always' },\n  tags: [{ name: 'automatica' }, { name: 'copias' }]\n}) }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "options": { "timeout": 15000 }
+        "options": {
+          "timeout": 15000
+        }
       },
       "id": "f0200000-0000-4000-8000-000000000009",
       "name": "Abrir incidencia por la copia",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [640, 420],
+      "position": [
+        640,
+        420
+      ],
       "credentials": {
-        "httpHeaderAuth": { "id": "CRED_MANTIS_API", "name": "Token de API de Mantis" }
+        "httpHeaderAuth": {
+          "id": "CRED_MANTIS_API",
+          "name": "Token de API de Mantis"
+        }
       },
       "retryOnFail": true,
       "maxTries": 3,
@@ -165,9 +224,15 @@
       "name": "Avisar que fallo",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [860, 420],
+      "position": [
+        860,
+        420
+      ],
       "credentials": {
-        "smtp": { "id": "CRED_SMTP_MAILPIT", "name": "Mailpit del laboratorio" }
+        "smtp": {
+          "id": "CRED_SMTP_MAILPIT",
+          "name": "Mailpit del laboratorio"
+        }
       },
       "onError": "continueRegularOutput"
     },
@@ -181,28 +246,115 @@
       "name": "Nota - como funciona",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-900, -280]
+      "position": [
+        -900,
+        -280
+      ]
     }
   ],
   "connections": {
-    "Todos los dias a las 3:30": { "main": [[{ "node": "Listar las copias", "type": "main", "index": 0 }]] },
-    "Listar las copias": { "main": [[{ "node": "Revisar fecha y tamano", "type": "main", "index": 0 }]] },
-    "Revisar fecha y tamano": { "main": [[{ "node": "Fecha y tamano correctos", "type": "main", "index": 0 }]] },
+    "Todos los dias a las 3:30": {
+      "main": [
+        [
+          {
+            "node": "Listar las copias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar las copias": {
+      "main": [
+        [
+          {
+            "node": "Revisar fecha y tamano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Revisar fecha y tamano": {
+      "main": [
+        [
+          {
+            "node": "Fecha y tamano correctos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Fecha y tamano correctos": {
       "main": [
-        [{ "node": "Comprobar el gzip", "type": "main", "index": 0 }],
-        [{ "node": "Abrir incidencia por la copia", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Comprobar que es un volcado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Abrir incidencia por la copia",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Comprobar el gzip": { "main": [[{ "node": "Evaluar integridad", "type": "main", "index": 0 }]] },
-    "Evaluar integridad": { "main": [[{ "node": "Esta integra", "type": "main", "index": 0 }]] },
+    "Evaluar integridad": {
+      "main": [
+        [
+          {
+            "node": "Esta integra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Esta integra": {
       "main": [
-        [{ "node": "Avisar que esta bien", "type": "main", "index": 0 }],
-        [{ "node": "Abrir incidencia por la copia", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Avisar que esta bien",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Abrir incidencia por la copia",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Abrir incidencia por la copia": { "main": [[{ "node": "Avisar que fallo", "type": "main", "index": 0 }]] }
+    "Abrir incidencia por la copia": {
+      "main": [
+        [
+          {
+            "node": "Avisar que fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprobar que es un volcado": {
+      "main": [
+        [
+          {
+            "node": "Evaluar integridad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "settings": {
     "executionOrder": "v1",

@@ -33,7 +33,7 @@ route:
     # Lo critico no espera treinta segundos ni cuatro horas.
     - matchers:
         - severidad = "critica"
-      receiver: registro
+      receiver: registro-y-n8n
       group_wait: 10s
       repeat_interval: 1h
 
@@ -51,6 +51,28 @@ receivers:
       # cambia esta URL y se borra el servicio.
       - url: http://receptor-alertas:8080/alertas
         send_resolved: true
+
+  # Lo critico va a los dos lados: al registro, que sigue siendo la evidencia
+  # mas simple de que el aviso salio, y al flujo F01 de n8n, que abre la
+  # incidencia en Mantis y manda el correo (punto 13).
+  #
+  # Un receptor puede tener varios webhook_configs y Alertmanager los llama a
+  # todos. Era eso o duplicar la ruta, que no se puede: cada alerta cae en un
+  # solo receptor.
+  - name: registro-y-n8n
+    webhook_configs:
+      - url: http://receptor-alertas:8080/alertas
+        send_resolved: true
+      - url: http://n8n:5678/webhook/alerta
+        send_resolved: true
+        # El webhook de n8n NO esta abierto: pide una cabecera con un secreto
+        # compartido. Sin ella responde 403. El secreto se lee de un archivo
+        # para que no quede escrito en este archivo, que si esta en el
+        # repositorio; lo genera preparar-n8n.sh.
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/.token-alertas
 
 inhibit_rules:
   # Si el objetivo esta caido, no tiene sentido avisar ademas que su memoria

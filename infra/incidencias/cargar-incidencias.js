@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Carga en MantisBT las 15 incidencias reales del proyecto (punto 11).
+ * Carga en MantisBT las 17 incidencias reales del proyecto (punto 11).
  *
  *   node infra/incidencias/cargar-incidencias.js [--solo INC-07] [--seco]
  *
@@ -57,6 +57,25 @@ async function api(metodo, ruta, cuerpo) {
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// mantis_bug_table.summary es varchar(128). Pasarse no da un error claro:
+// MySQL se queja, Mantis convierte eso en trigger_error(E_USER_ERROR) y PHP
+// 8.5, donde eso esta en desuso, devuelve un 500 cuyo mensaje habla de la
+// deprecacion y no de la columna. Se mide aca, con el prefijo "REF — " ya
+// sumado, para que el aviso diga que acortar y cuanto.
+const LIMITE_RESUMEN = 128;
+
+function revisarLargos(lista) {
+  const malos = lista
+    .map((i) => ({ ref: i.ref, largo: `${i.ref} — ${i.resumen}`.length }))
+    .filter((x) => x.largo > LIMITE_RESUMEN);
+  if (malos.length === 0) return;
+  console.error(`El resumen no puede pasar de ${LIMITE_RESUMEN} caracteres contando el prefijo:`);
+  for (const m of malos) {
+    console.error(`  ${m.ref}: ${m.largo} caracteres, hay que sacarle ${m.largo - LIMITE_RESUMEN}.`);
+  }
+  process.exit(1);
+}
+
 // --------------------------------------------------------------------- carga
 async function existentes() {
   // page_size al maximo: con 15 incidencias no hace falta paginar, pero si
@@ -107,6 +126,10 @@ async function cambiarEstado(id, estado, resolucion) {
   console.log(`Mantis: ${URL_BASE}`);
   console.log(`Proyecto: ${PROYECTO}`);
   if (SECO) console.log('MODO SECO: no se escribe nada.\n');
+
+  // Antes de tocar la API: un resumen que no entra en la columna devuelve un
+  // 500 cuyo mensaje habla de una deprecacion de PHP y no de la columna.
+  revisarLargos(datos.incidencias);
 
   let yaEstan;
   try {

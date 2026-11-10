@@ -299,20 +299,142 @@ Y en `alertmanager.yml`, agregar el *webhook* de n8n con su cabecera.
 
 ---
 
-## 8. Limitaciones
+## 8. La corrida, y lo que la corrida encontró
 
-1. **Los tres flujos todavía no se ejecutaron.** El entorno de Docker de la
-   máquina dejó de arrancar mientras se trabajaba en esto. Los JSON están
-   escritos, revisados y son JSON válido; **faltan las ejecuciones, las
-   capturas y la prueba de fallo de la sección 5**. No se presenta como hecho.
+Hecha el **10/11/2026**. Vale la pena empezar por el resultado incómodo:
+
+> **Ninguno de los tres flujos funcionaba como estaba escrito.** Los tres eran
+> JSON válido, los tres se importaron sin protestar, y los tres fallaban: dos
+> con un error y uno —el peor— *silenciosamente*, haciendo lo que no
+> correspondía. Trece problemas distintos, y ni uno aparecía leyendo el JSON.
+
+### Lo que quedó andando, y cómo se comprobó
+
+| Flujo | Cómo se probó | Resultado |
+|---|---|---|
+| **F01** | Alerta inyectada en **Alertmanager** (`POST /api/v2/alerts`), no en n8n | Alertmanager la repartió al registro **y** a n8n; n8n abrió la incidencia en Mantis con las etiquetas `automatica, monitoreo` y mandó el correo |
+| **F01 (duplicados)** | La misma alerta tres veces | La primera abre; las siguientes **agregan una nota** y no abren otra |
+| **F01 (seguridad)** | `POST` sin la cabecera y con el secreto equivocado | **403** en los dos casos |
+| **F02** | Calendario puesto a cada minuto durante la prueba | Encontró `restoyadb-20261110-151635.dump`, **466,8 MB**, de hace **0,7 h**, 8 copias guardadas; verificó la cabecera; mandó `[OK]`; **no** abrió incidencia |
+| **F03** | Igual | Subió `informe-rendimiento-2026-11-10.md` a Nextcloud y mandó `[ATENCION] 1 hallazgo(s)` |
+
+El hallazgo de F03 no es de adorno: detectó que **`/api/chatbot/` tarda 1150 ms
+en el percentil 95**, contra un umbral de 1000 ms. Y su tabla de servicios
+muestra los **dos** exportadores de PostgreSQL arriba, que es la comprobación
+del E10-04 del punto 6 vista desde otro lado.
+
+### Los trece problemas
+
+Agrupados por lo que enseñan.
+
+**Lo que el repositorio no podía saber del entorno (4):**
+
+1. El campo `active` es `NOT NULL` en la base de n8n. Sin él, el importador
+   corta con `null value in column "active"`. Los flujos lo llevan en
+   `false`: activarlos es decisión de quien los revisa.
+2. Sin un `id` fijo en el JSON, **cada importación crea un flujo nuevo**. Dos
+   corridas dejaron seis flujos donde tenían que haber tres. Ahora los ids son
+   `restoya-f01-alertas` y compañía, y reimportar sobreescribe.
+3. El `/copias` que F02 revisa **no estaba montado** en el contenedor de n8n.
+   Sin ese montaje el flujo no ve ninguna copia y abre **una incidencia falsa
+   cada noche**: el peor resultado posible para una alerta automática, porque
+   enseña a ignorarla.
+4. `NEXTCLOUD_USUARIO_BOT` no existía en el contenedor, así que la ruta de
+   subida de F03 quedaba cortada (`.../files//RestoYa/...`).
+
+**Supuestos míos sobre otros componentes (5):**
+
+5. **El más grave.** F01 leía las etiquetas de Prometheus en inglés
+   (`severity`, `summary`, `description`), y las reglas de este proyecto están
+   en castellano (`severidad: critica`, `resumen`, `detalle`, `por_que_*`). Con
+   una alerta real la severidad caía al valor por defecto y el filtro de
+   críticas la descartaba: **el flujo no habría abierto una sola incidencia, y
+   no habría dado ningún error**. Ahora acepta los dos juegos de nombres, los
+   de acá primero.
+6. F02 buscaba `*.sql.gz` y verificaba con `gzip -t`. Las copias son `*.dump`:
+   `backup.sh` usa `pg_dump -Fc`. Mismo efecto que el punto 3: incidencia
+   falsa cada noche.
+7. `ls --time-style` **no existe en BusyBox**, que es el `ls` de la imagen de
+   n8n: el comando imprimía la *ayuda* de `ls` y el flujo se quedaba sin datos.
+   Se cambió por un bucle con `stat`, que además da la fecha en segundos desde
+   la época y no hay que interpretar texto.
+8. Nextcloud rechaza con **HTTP 400** («Access through untrusted domain») todo
+   pedido cuya cabecera `Host` no esté en `trusted_domains`. Desde el
+   navegador no se nota, porque ahí el `Host` es `127.0.0.1`; lo que se rompe
+   es que otro servicio del grupo le hable **por su nombre de red**, que es
+   justo lo que hace F03.
+9. Un recurso compartido con un grupo **se monta en la raíz del destinatario
+   con el nombre de la carpeta**, no con su ruta original. Para la cuenta
+   `automatizacion`, la carpeta es `/Rendimiento`, y la ruta larga
+   `/RestoYa/04-Informes/Rendimiento` devuelve 404.
+
+**Errores de diseño del flujo (2):**
+
+10. Las tres consultas a Prometheus de F03 salían **en paralelo** del activador
+    y entraban al mismo nodo de análisis. En n8n eso hace que el análisis corra
+    una vez por rama que llega, y el código lee las otras dos con
+    `$('otro nodo')`: la primera vez, las otras todavía no se ejecutaron y n8n
+    corta con `Referenced node is unexecuted`. Encadenadas en serie corre una
+    sola vez. Son tres consultas de milisegundos: el paralelismo no compraba
+    nada y rompía el flujo.
+11. En el nodo «Convert to File», la operación `toBinary` significa **«pasar
+    una cadena base64 a archivo»**. Con texto plano adentro lo decodifica como
+    base64 y **sube basura binaria sin dar error**. La operación correcta se
+    llama `toText`; y un nombre de operación inválido (probé `text`) tampoco
+    da error: n8n toma otra cosa y sube basura igual. Dos veces el mismo
+    aprendizaje: **la ejecución «correcta» no prueba que el resultado esté
+    bien**. Hubo que abrir el archivo subido y leerlo.
+
+**Una afirmación falsa en el propio producto (1):**
+
+12. La descripción que F01 escribía en cada incidencia decía *«esta incidencia
+    se cierra sola cuando llegue el aviso de resuelto»*. **No es cierto**: el
+    primer filtro sólo deja pasar `firing`, así que un `resolved` no hace
+    nada. Se comprobó mandando el aviso de resuelto: la incidencia quedó
+    `new`/`open`. La frase ahora dice que cerrarla es trabajo de una persona,
+    y cerrar en automático quedó como limitación.
+
+**Y uno de integración (1):**
+
+13. El `http_config` de Alertmanager **no permite cabeceras con nombre
+    arbitrario**, así que el `X-Alerta-Token` que había pensado no servía.
+    Sólo sabe mandar `Authorization`, con su bloque `authorization`. Se pasó a
+    `Authorization: Bearer <secreto>`, con el secreto en un archivo
+    (`credentials_file`) y no escrito en `alertmanager.yml`, que sí está en el
+    repositorio.
+
+### La moraleja, que es la de la consigna
+
+De los trece, **cinco no daban ningún error**: F01 descartando toda alerta
+real, F02 sin ver las copias, F03 subiendo basura, la frase falsa, y los
+flujos duplicándose. Un flujo que «se ejecutó con éxito» no es un flujo que
+funciona. La única forma de saberlo fue inyectar una alerta de verdad y después
+**abrir el archivo que quedó del otro lado**.
+
+---
+
+## 9. Limitaciones
+
+1. **Faltan las capturas de pantalla.** Los tres flujos están cargados,
+   activos y verificados (sección 8), pero el informe no incluye todavía
+   imágenes del lienzo de n8n, de la lista de ejecuciones ni del buzón.
 2. **Nadie vigila a n8n** (sección 6). Es la limitación más importante.
 3. **F02 no prueba la restauración**, sólo la integridad del archivo.
 4. **F03 no usa un modelo de IA.** Es una decisión justificada (sección 3),
    pero la consigna lo sugería y corresponde decir que no se hizo.
-5. **Las credenciales se cargan a mano** (sección 7).
+5. **Cerrar la incidencia en automático no está hecho.** Cuando Alertmanager
+   avisa que la alerta se resolvió, F01 no cierra la incidencia que abrió: hace
+   falta una rama que busque la huella y la cierre. Es la mejora más clara que
+   queda pendiente.
 6. **No hay un cuarto flujo de eventos de seguridad.** La consigna lo
    mencionaba como opcional. El más útil sería sincronizar el repositorio con
    Nextcloud en cada *merge* a `develop`, que hoy es manual.
-7. **El `webhook` de n8n no está dado de alta en `alertmanager.yml`.** Hay que
-   agregarlo cuando se carguen las credenciales: hasta entonces F01 sólo se
-   puede disparar a mano.
+7. **El archivo del secreto queda con permisos amplios en Windows.** El script
+   hace `chmod 600`, pero sobre NTFS desde Git Bash eso no cambia la lista de
+   control de acceso: el archivo queda `644`. En Linux el `chmod` sí aplica.
+8. **La prueba de F02 y F03 se hizo con el calendario alterado.** Para no
+   esperar a las 3:30 ni al lunes, se importó una copia con el calendario
+   puesto a cada minuto, se observó la ejecución y después se reimportaron los
+   JSON del repositorio, que llevan los horarios reales (`0 30 3 * * *` y
+   `0 0 8 * * 1`). Las ejecuciones son reales; el momento en que ocurrieron,
+   forzado.

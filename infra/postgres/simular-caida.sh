@@ -25,6 +25,12 @@
 
 set -euo pipefail
 
+# Git Bash (MSYS) convierte todo argumento que parezca una ruta absoluta en
+# una ruta de Windows: "-D /var/lib/postgresql/data" le llega a pg_ctl como
+# "C:/Program Files/Git/var/lib/postgresql/data" y falla. En Linux esta
+# variable no molesta a nadie.
+export MSYS_NO_PATHCONV=1
+
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 ENV="$AQUI/../compose/.env"
 PRIMARIO=restoya_db
@@ -64,12 +70,12 @@ titulo "2. Escribir algo justo antes de cortar"
 # Esta fila es la prueba de que no se perdio nada: se escribe en el primario,
 # se confirma que llego a la replica, y recien ahi se corta.
 MARCA="caida-$(date +%H%M%S)"
-sql_primario "INSERT INTO mesas (numero, capacidad, estado, \"fechaCreacion\", \"fechaActualizacion\")
-  VALUES (902, 4, 'LIBRE', NOW(), NOW())
-  ON CONFLICT (numero) DO UPDATE SET \"fechaActualizacion\" = NOW();" > /dev/null
+sql_primario "INSERT INTO mesas (\"numMesa\", capacidad, estado)
+  VALUES (902, 4, 'LIBRE')
+  ON CONFLICT (\"numMesa\") DO UPDATE SET capacidad = 4;" > /dev/null
 echo "Insertada la mesa 902 en el primario ($MARCA)."
 sleep 2
-echo "En la replica: $(sql_replica "SELECT numero || ' / ' || estado FROM mesas WHERE numero = 902;")"
+echo "En la replica: $(sql_replica "SELECT \"numMesa\" || ' / ' || estado FROM mesas WHERE \"numMesa\" = 902;")"
 
 LSN_PRIMARIO=$(sql_primario 'SELECT pg_current_wal_lsn();')
 LSN_REPLICA=$(sql_replica  'SELECT pg_last_wal_replay_lsn();')
@@ -101,13 +107,13 @@ echo "   de servicio caido se dispara a los 90 s (ver punto 10)."
 titulo "4. Promover la replica"
 echo "La replica sigue viva y sigue leyendo, pero no acepta escrituras:"
 docker exec "$REPLICA" psql -U "$DB_USER" -d "$DB_NAME" -c \
-    "INSERT INTO mesas (numero, capacidad, estado, \"fechaCreacion\", \"fechaActualizacion\")
-     VALUES (903, 4, 'LIBRE', NOW(), NOW());" 2>&1 | sed 's/^/     /' || true
+    "INSERT INTO mesas (\"numMesa\", capacidad, estado)
+     VALUES (903, 4, 'LIBRE');" 2>&1 | sed 's/^/     /' || true
 
 echo
 echo "Promoviendo..."
 T1=$(date +%s)
-docker exec "$REPLICA" pg_ctl promote -D /var/lib/postgresql/data 2>&1 | sed 's/^/     /'
+docker exec -u postgres "$REPLICA" pg_ctl promote -D /var/lib/postgresql/data 2>&1 | sed 's/^/     /'
 
 for i in $(seq 1 60); do
     if [ "$(sql_replica 'SELECT pg_is_in_recovery();' 2>/dev/null || echo t)" = "f" ]; then
@@ -129,17 +135,17 @@ echo "para que no se puedan mezclar los WAL del nodo viejo con los del nuevo."
 # -----------------------------------------------------------------------------
 titulo "5. No se perdio nada, y ahora si acepta escrituras"
 echo "La mesa 902, escrita en el primario antes del corte:"
-sql_replica "SELECT numero || ' / ' || estado FROM mesas WHERE numero = 902;" | sed 's/^/     /'
+sql_replica "SELECT \"numMesa\" || ' / ' || estado FROM mesas WHERE \"numMesa\" = 902;" | sed 's/^/     /'
 echo
 echo "Conteos (tienen que ser los mismos que antes del corte):"
 sql_replica "SELECT 'pedidos', COUNT(*) FROM pedidos
              UNION ALL SELECT 'pagos', COUNT(*) FROM pagos;" | sed 's/^/     /'
 echo
 echo "Escritura en el nodo promovido:"
-sql_replica "INSERT INTO mesas (numero, capacidad, estado, \"fechaCreacion\", \"fechaActualizacion\")
-  VALUES (903, 4, 'LIBRE', NOW(), NOW())
-  ON CONFLICT (numero) DO UPDATE SET \"fechaActualizacion\" = NOW()
-  RETURNING numero || ' escrita en el nodo promovido';" | sed 's/^/     /'
+sql_replica "INSERT INTO mesas (\"numMesa\", capacidad, estado)
+  VALUES (903, 4, 'LIBRE')
+  ON CONFLICT (\"numMesa\") DO UPDATE SET capacidad = 4
+  RETURNING \"numMesa\" || ' escrita en el nodo promovido';" | sed 's/^/     /'
 
 # -----------------------------------------------------------------------------
 titulo "6. Que queda despues"

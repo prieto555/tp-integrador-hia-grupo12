@@ -238,16 +238,46 @@ Dos pasos, los dos repetibles:
 ./infra/incidencias/preparar-mantis.sh
 ```
 
-Crea el proyecto, las siete categorías, las cinco cuentas y emite un token de
-API. Además **cambia la contraseña por defecto** (`administrator`/`root`): la
-genera al azar y la guarda en `infra/compose/.env`, sin imprimirla.
+Crea el esquema si la base está vacía, el proyecto, las siete categorías, las
+cinco cuentas y emite un token de API. Además **cambia la contraseña por
+defecto** (`administrator`/`root`): la genera al azar y la guarda en
+`infra/compose/.env`, sin imprimirla.
+
+Sobre el esquema: **la imagen no instala nada.** Trae MantisBT y Apache, y el
+esquema lo crea `admin/install.php`, que es un formulario web. Y el
+*entrypoint* de la imagen **esconde la carpeta `admin/`** salvo que
+`MANTIS_ENABLE_ADMIN` valga 1 — lo cual está bien y no se cambió, porque esa
+carpeta trae el instalador y las herramientas de mantenimiento: publicada,
+cualquiera que llegue al puerto puede reinstalar la base encima. Así que el
+procedimiento es encender esa carpeta, instalar, y volver a apagarla, y eso es
+lo que hace el script. Sin ese paso, Mantis devuelve **HTTP 500 en todas sus
+páginas**, con el error `SQL Statement failed on preparation: SELECT * FROM
+mantis_user_table`, que no dice en ningún lado que falta instalar.
 
 ```bash
 node infra/incidencias/cargar-incidencias.js
 ```
 
-Carga las 15 con sus notas, sus horas y sus cambios de estado. Con `--seco`
+Carga las 17 con sus notas, sus horas y sus cambios de estado. Con `--seco`
 muestra qué haría sin escribir nada; con `--solo INC-07` carga una sola.
+
+### La corrida
+
+Hecha el **10/11/2026**. Lo que quedó en la instancia, leído de vuelta por la
+API REST (`GET /api/rest/issues?project_id=1`) y no de lo que el script dijo
+que hizo:
+
+| Qué | Verificado |
+|---|---|
+| Incidencias | **17** |
+| Estado | 16 `closed`, 1 `acknowledged` |
+| Por categoría | 6 Seguridad, 4 Infraestructura y Docker, 3 Monitoreo, 2 Backend, 2 Base de datos |
+| Por severidad | 1 `block`, 1 `crash`, 11 `major`, 4 `minor` |
+| Con al menos una nota | 17 de 17 |
+| Con etiquetas | 17 de 17 |
+
+La segunda corrida reconoció las 17 como ya cargadas y no duplicó ninguna, que
+es la prueba de que el script es idempotente de verdad y no de palabra.
 
 ### Por qué un script y no a mano
 
@@ -270,7 +300,33 @@ elegante; es preferible a dejar veinticinco pasos manuales sin documentar.
 Y para emitir el token de API, Mantis exige reautenticarse, cosa que un script
 no puede responder. El script desactiva esa exigencia mientras dura la emisión
 y **la vuelve a activar pase lo que pase** (con un `trap`, no con una línea al
-final que no corre si algo falla antes).
+final que no corre si algo falla antes). Eso se comprobó: una corrida que falló
+en medio de la emisión dejó igual `\$g_reauthentication = ON`.
+
+#### Tres cosas que la primera corrida dejó en claro
+
+Ninguna estaba en la documentación de Mantis, y las tres dan errores que
+apuntan a otro lado:
+
+1. **El cambio de contraseña se descarta en silencio si no se manda la actual.**
+   El formulario de `account_update.php` tiene un campo `password_current`.
+   Sin él, Mantis responde **HTTP 200**, no dice nada, y la contraseña sigue
+   siendo la de fábrica. El script lo detectaba tarde: ahora, si no puede
+   volver a entrar con la contraseña nueva, prueba la de fábrica y **dice** que
+   el formulario descartó el cambio en lugar de un «no se pudo entrar» a secas.
+2. **El resumen no puede pasar de 128 caracteres**, porque
+   `mantis_bug_table.summary` es `varchar(128)`, y hay que contar el prefijo
+   `INC-NN — ` que el cargador agrega adelante. INC-08 llegaba a 132 y fallaba.
+   Lo peor no es el límite sino el error: MySQL se queja, Mantis lo convierte en
+   `trigger_error(E_USER_ERROR)`, y como eso está en desuso desde PHP 8.4, la
+   API devuelve un **500 cuyo mensaje habla de la deprecación de PHP y no de la
+   columna**. El cargador ahora mide los 17 resúmenes **antes** de la primera
+   llamada y, si alguno no entra, dice cuál y cuántos caracteres sacarle.
+3. **El token de API se muestra en un `<div class="well">`**, no en un campo de
+   formulario. El script lo buscaba como un `input readonly` y se quedaba sin
+   token, y con `set -o pipefail` un `grep` sin coincidencias cortaba el script
+   sin mensaje. Los `grep` de los que se extraen valores llevan ahora
+   `|| true`, para que el error lo dé la comprobación siguiente y no el `set -e`.
 
 ---
 
@@ -287,10 +343,10 @@ Está explicado en [`14-automatizacion.md`](14-automatizacion.md).
 
 ## 9. Limitaciones
 
-1. **Las 15 incidencias todavía no están cargadas en una instancia corriendo.**
-   El entorno de Docker de la máquina dejó de arrancar mientras se trabajaba
-   en esto. El contenido, la configuración y los dos scripts están escritos y
-   revisados; **falta la corrida y las capturas**. No se presenta como hecho.
+1. **Faltan las capturas de pantalla.** Las 17 incidencias están cargadas y
+   verificadas por la API (sección 7), pero el informe no incluye todavía
+   imágenes del tablero de Mantis, del ciclo de vida de un *ticket* ni del
+   buzón de Mailpit. Es trabajo de pantalla, no de configuración.
 2. **El registro de horas se carga como nota y no en el campo de tiempo.** La
    API REST de Mantis 2.28 no expone el registro de horas, y tocarlo por
    debajo, directo en la base, sería peor.
