@@ -34,6 +34,45 @@ docker compose ps --format "{{.Name}}\t{{.State}}"
 
 ---
 
+## Puntos 1, 2 y 3 — Diagnóstico, Scrum y control de versiones
+
+Estos tres no se prueban con un comando: se comprueban mirando.
+
+**Punto 1 — diagnóstico.** Abrí [`docs/01-descripcion.md`](docs/01-descripcion.md)
+y buscá **D-01**. Cada afirmación del documento cita archivo y línea: elegí una
+cualquiera y verificala. Si una no se sostiene, hay que dudar del resto.
+
+**Punto 2 — Scrum.** Abrí el [tablero](https://trello.com/b/ZF8ZDLWA).
+**Tenés que ver:** las listas Backlog, Sprint, En curso, En revisión y Hecho,
+y tarjetas con criterio de aceptación. Las evidencias de seguimiento
+—bitácora, siete impedimentos y seis cambios de alcance— están en
+[`docs/scrum/seguimiento.md`](docs/scrum/seguimiento.md).
+
+> ⚠️ El tablero tiene **un solo miembro** hasta que los otros cuatro acepten la
+> invitación. Mientras tanto, la tarjeta E2-03 no se puede cerrar.
+
+**Punto 3 — control de versiones.**
+
+```bash
+git log --oneline origin/develop | wc -l && git branch -r | wc -l
+```
+
+**Tenés que ver:** un historial largo —incluye los 150 commits originales de
+RestoYa, traídos con `git subtree` para no perderlo— y varias ramas.
+
+```bash
+gh pr list --state merged --limit 20 --json number,title --jq '.[] | "#\(.number) \(.title)"'
+```
+
+**Tenés que ver (medido):** los PR mergeados, cada uno con su revisión escrita.
+
+> ⚠️ **Ninguno tiene aprobación de otro integrante**, y eso es lo primero que
+> conviene reconocer si lo preguntan. Es el impedimento **I-04**, está escrito
+> sin maquillar en [`docs/scrum/seguimiento.md`](docs/scrum/seguimiento.md), y
+> se cierra con una sola aprobación de un compañero.
+
+---
+
 ## Punto 4 — Base contenerizada y cliente de administración
 
 **Qué prueba:** que la base tiene los datos y que pgAdmin la alcanza.
