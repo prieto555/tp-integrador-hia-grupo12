@@ -15,7 +15,7 @@ de documento, y algunos documentos se cubren dentro de otro.
 | 1 | Descripción de la aplicación | [`01-descripcion.md`](01-descripcion.md) | Hecho |
 | 2 | Arquitectura general | [`02-arquitectura.md`](02-arquitectura.md) | Hecho |
 | 3 | Inventario tecnológico | [`03-inventario.md`](03-inventario.md) | Hecho |
-| 4 | Manual de instalación | [`../README.md`](../README.md) + [`../COMO-CORRER.md`](../COMO-CORRER.md) | Hecho |
+| 4 | Manual de instalación | [`../INSTALACION.md`](../INSTALACION.md) | Hecho; de un clon limpio a los 23 contenedores, con la corrida del 11/11 al final |
 | 5 | Configuración Docker | [`05-docker.md`](05-docker.md) | Hecho |
 | 6 | Procedimiento de migración y carga de datos | [`06-carga-datos.md`](06-carga-datos.md) | Hecho |
 | 7 | Informe de optimización SQL | [`07-optimizacion-sql.md`](07-optimizacion-sql.md) | Hecho |

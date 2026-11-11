@@ -26,9 +26,30 @@ Lo técnico está terminado y en **una sola rama**: `develop`.
 [`02-arquitectura.md`](02-arquitectura.md) → [`capturas/`](capturas/README.md).
 Y para la defensa, [`17-defensa.md`](17-defensa.md).
 
+### Comprobado el 11/11, desde `develop`
+
+No es una promesa: se levantó el laboratorio completo desde esta rama y se midió.
+
+| Qué | Resultado |
+|---|---|
+| Contenedores | **23 de 23** corriendo, los siete perfiles |
+| Aplicación, API, Prometheus, Grafana, Alertmanager, Mantis, Nextcloud, n8n, pgAdmin, Mailpit | **200** los diez |
+| Sitio publicado | **200**, con `CF-RAY: …-EZE` — pasó por el datacenter de Cloudflare en Ezeiza, no por un atajo local |
+| Cabeceras de seguridad por el túnel | `x-content-type-options` y `x-frame-options` presentes: el arreglo de nginx sobrevive al reinicio |
+| `/metrics` y `/api-docs` desde Internet | **16.695 bytes**, los mismos que `/`: devuelven el `index.html` de la SPA. No están protegidos, están **fuera del camino** |
+| Replicación | `streaming`, **0 bytes atrás**, retraso **0** |
+| La réplica rechaza escrituras | `ERROR: cannot execute INSERT in a read-only transaction` |
+| Filas | `pedidos`, `detalle_pedidos` y `pagos`: **6.000.000** exactos cada una |
+| Destinos de Prometheus | **6 de 6 en UP** |
+
 **Para levantarlo**, la puesta en marcha está en el `README.md` de la raíz. Dos
 avisos que hacen perder una hora si no se saben:
 
+0. **Los perfiles hay que nombrarlos bien.** Los que existen son `app`,
+   `replica`, `monitoreo`, `incidencias`, `documental`, `automatizacion` y
+   `tunel`. Si se escribe uno que no existe, **Compose no avisa**: no levanta
+   nada de ese perfil y sigue como si nada. El comando del paso 8 es el que
+   levanta todo.
 1. Hay que crear `infra/prometheus/.token-alertas` **antes** de levantar el
    perfil `monitoreo`. Está en el `.gitignore` porque lleva un secreto, y
    Docker, al montar un archivo que no existe, **crea una carpeta** con ese
@@ -234,7 +255,12 @@ Los tres están en [`16-limitaciones.md`](16-limitaciones.md) y en
 Media hora antes:
 
 ```bash
-docker compose --profile app --profile monitoreo --profile procesos --profile tunel up -d
+docker compose \
+  --profile app --profile replica \
+  --profile monitoreo \
+  --profile incidencias --profile documental --profile automatizacion \
+  --profile tunel \
+  up -d
 ```
 
 - [ ] `curl -I https://restoya.liners-panel.com` devuelve **200**.
