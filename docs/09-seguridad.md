@@ -3,8 +3,10 @@
 Entregable del punto 15.9. Cubre el punto 14 de la consigna (épica E14 del
 backlog).
 
-Todo verificado contra el stack corriendo. Los comandos de verificación están
-al final de cada sección, con su salida real.
+Los once primeros hallazgos están verificados contra el stack corriendo: los
+comandos de verificación están al final de cada sección, con su salida real.
+**El hallazgo 12 es la excepción** y lo dice en su propia sección: la evidencia
+es el código, no una corrida.
 
 ---
 
@@ -23,6 +25,7 @@ al final de cada sección, con su salida real.
 | 9 | Imágenes base desactualizadas | Alta | **Corregidas hasta donde hay parche** |
 | 10 | `@scarf/scarf` llama a su servidor al instalarse | Baja | Documentado, sin acción |
 | 11 | El limitador guarda las cuentas en memoria | Media | Documentado, no corregido |
+| 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
 
 ---
 
@@ -298,6 +301,55 @@ haya pedido. Se saca sacando Swagger, que no vale la pena.
 
 El arreglo es un almacén compartido, normalmente Redis. Es un servicio más en
 el *compose* y queda anotado como tarea, no hecho.
+
+---
+
+## 12 · Diecinueve endpoints sin ninguna autenticación
+
+Apareció escribiendo el diagnóstico del punto 1, después de cerrados los nueve
+primeros hallazgos de este informe, y es más grave que varios de ellos. Cinco
+archivos de rutas **no importan el middleware de autenticación, ni una sola
+vez**:
+
+| Archivo | Endpoints | Lo peor que hay ahí |
+|---|---|---|
+| `backend/src/routes/pago.route.js:5-9` | 5 | `POST /` registra un pago; `DELETE /:id` lo borra |
+| `backend/src/routes/rol.route.js:7-11` | 5 | `DELETE /:id` borra un rol |
+| `backend/src/routes/funcion.route.js:7-11` | 5 | `PUT /:id` reescribe un permiso del sistema |
+| `backend/src/routes/cocina.route.js:6-9` | 2 | `PATCH /estado/:idPedido` cambia el estado de cualquier pedido |
+| `backend/src/routes/reporte.route.js:5-6` | 2 | el PDF y el Excel del cierre de caja |
+
+No es un criterio de diseño: `caja.route.js` —el mismo dominio, la misma
+plata— **sí** tiene `router.use(verificarToken)` y
+`router.use(verificarRol('Cajero', 'Gerente'))` en sus líneas 7 y 8. Son cinco
+archivos que quedaron afuera.
+
+La combinación peor es `DELETE /api/roles/:id` con el `ON DELETE CASCADE` de
+`usuario_roles`: borrar el rol Gerente sin autenticarse deja el sistema **sin
+nadie que pueda administrarlo**, y la cuenta de administrador sigue existiendo
+pero sin rol.
+
+Vale aclarar qué lo contiene hoy y qué no:
+
+- **Lo contiene** que el backend no publique puerto: desde afuera sólo se llega
+  por nginx, que reenvía `/api/`. Lo cual no ayuda nada acá, porque estas rutas
+  están justamente bajo `/api/`.
+- **No lo contiene** el *guard* de Angular. Es comodidad de interfaz, no
+  autorización: `curl` no pasa por Angular.
+- **Lo contiene a medias** el limitador general de 300 peticiones por minuto.
+  Frena el abuso masivo, no la petición única que borra un rol.
+
+> **Por qué queda documentado y no corregido.** Agregar `verificarToken` es una
+> línea por archivo, pero cambia el comportamiento de pantallas que hoy
+> funcionan sin mandar *token* —cocina llama a `/api/cocina` y la caja a
+> `/api/reportes`— y habría que verificar cada una. Sin pruebas automatizadas y
+> con la entrega encima, eso es cómo se rompe una demostración. El arreglo está
+> anotado con su alcance en [`16-limitaciones.md`](16-limitaciones.md), §8.
+
+**Verificación pendiente.** A diferencia de los once hallazgos anteriores, éste
+**no está comprobado contra el stack corriendo**: el `curl` sin token quedó sin
+correr porque el motor de Docker no estaba levantado. La evidencia de hoy es el
+código, en los archivos y líneas de la tabla.
 
 ---
 

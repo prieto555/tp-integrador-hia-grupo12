@@ -41,9 +41,23 @@ de esta misma materia, con *failover* medido en 5 segundos.
 
 ### 1.3 La aplicación no está publicada en Internet (punto 9)
 
-Necesita una cuenta de Cloudflare o Tailscale que todavía no existe. La
-consigna pide que esté accesible **durante la demostración final**, así que es
-lo más urgente de la lista por fecha, aunque no por riesgo.
+Todo lo necesario está construido y verificado localmente: el servicio
+`cloudflared` en el *compose* (perfil `tunel`), la plantilla versionada de
+configuración con el cuadro de qué **no** se publica, y
+`infra/tunel/preparar-tunel.sh`, que crea el túnel y el registro DNS sin tocar
+ningún otro túnel de la cuenta.
+
+**Lo único que falta es el nombre de la zona** —el dominio registrado en
+Cloudflare—, porque sin él no hay `CNAME` que crear. La cuenta de Cloudflare
+existe. La consigna pide que la aplicación esté accesible **durante la
+demostración final**, así que esto es lo más urgente de la lista por fecha,
+aunque no por riesgo.
+
+Queda además una verificación pendiente para cuando el túnel esté arriba:
+**qué IP ve el backend**. `app.set('trust proxy', 1)` confía en exactamente un
+salto (nginx), y Cloudflare agrega los suyos. Si el backend termina viendo
+siempre la misma IP, el límite de intentos de inicio de sesión deja de
+distinguir clientes y pasa a ser un límite global.
 
 ---
 
@@ -53,7 +67,9 @@ Del informe [`09-seguridad.md`](09-seguridad.md):
 
 | Limitación | Por qué importa |
 |---|---|
-| **No hay doble factor ni revocación de sesiones.** Un JWT robado sirve hasta que vence | Es el agujero más grande que queda en la aplicación |
+| **19 endpoints no tienen ninguna autenticación**: los cinco de `/api/pagos`, los cinco de `/api/roles`, los cinco de `/api/funciones`, los dos de `/api/cocina` y los dos de `/api/reportes` | Es lo más grave que queda en pie. `DELETE /api/roles/:id` sin token, con el `CASCADE` de `usuario_roles`, deja el sistema sin nadie que pueda administrarlo. Detalle y evidencia en [`01-descripcion.md`](01-descripcion.md), hallazgo D-01 |
+| **No hay doble factor ni revocación de sesiones.** Un JWT robado sirve hasta que vence | Es el agujero más grande de los que sí tienen autenticación |
+| **Dos mecanismos de autorización conviviendo**: `verificarRol` compara el nombre del rol, `verificarPermiso` consulta `roles_funciones`. Sólo `usuario.route.js` usa el segundo | Un rol nuevo con los permisos correctos no entra a ninguna ruta que use el primero (hallazgo D-04) |
 | **El limitador de peticiones guarda el estado en memoria.** Se reinicia con el proceso y se multiplica por cada réplica del backend | Un reinicio borra el conteo de intentos de login |
 | **Las imágenes no están firmadas.** Nada impide que alguien publique una imagen con el mismo nombre | Cadena de suministro |
 | **Dos vulnerabilidades sin parche publicado**: `brotli` en Alpine y la biblioteca estándar de Go en la imagen de `postgres` | No se pueden arreglar; hay que revisarlas cada tanto |
@@ -127,17 +143,27 @@ Del informe [`11-cicd.md`](11-cicd.md):
 Esto no son limitaciones de diseño: es trabajo pendiente, y conviene no
 confundirlos.
 
+> **Esta sección se vació casi entera el 10/11.** Las cuatro corridas que
+> estaban pendientes se hicieron ese día, y conviene decir qué dejaron, porque
+> **ninguna de las cuatro pasó limpia la primera vez**: la de n8n encontró trece
+> problemas, cinco de ellos sin dar ningún error. Está contado en
+> [`14-automatizacion.md`](14-automatizacion.md), sección 8.
+
 | Qué | Estado |
 |---|---|
-| Prueba de caída del primario (`simular-caida.sh`) | El script está escrito y mide cada paso. **Falta correrlo** y pegar los números en [`10-cluster.md`](10-cluster.md) |
-| Las 15 incidencias cargadas en Mantis | El contenido, la configuración y los dos scripts están. **Falta levantar Mantis y correrlos** |
-| Nextcloud con su estructura y permisos | Igual |
-| Los tres flujos de n8n ejecutados | Los JSON están escritos y son válidos. **Faltan las ejecuciones y la prueba de fallo** |
-| Capturas del tablero de Grafana | Está aprovisionado desde el repositorio y verificado consulta por consulta; faltan las capturas |
+| Prueba de caída del primario (`simular-caida.sh`) | **Corrida.** 0 bytes de diferencia, promoción en 1 s, línea de tiempo 1 → 2. Los números están en [`10-cluster.md`](10-cluster.md) |
+| Las incidencias cargadas en Mantis | **Corrida.** 17 incidencias, 16 cerradas y 1 reconocida, todas con notas y etiquetas ([`12-incidencias.md`](12-incidencias.md)) |
+| Nextcloud con su estructura y permisos | **Corrida**, con la matriz de permisos comprobada contra la API (`PUT` → 201, `DELETE` → 403) ([`13-documental.md`](13-documental.md)) |
+| Los tres flujos de n8n ejecutados | **Corridos**, y arreglados: los tres estaban mal escritos ([`14-automatizacion.md`](14-automatizacion.md)) |
+| Capturas del tablero de Grafana | **Falta.** Está aprovisionado desde el repositorio y verificado consulta por consulta; faltan las capturas |
+| Capturas de Mantis, Nextcloud y n8n | **Faltan.** Los datos están cargados y verificados por API; falta la foto |
+| `curl` sin token contra los 19 endpoints abiertos (D-01) | **Falta.** La evidencia de hoy es el código; la comprobación en vivo quedó pendiente porque el motor de Docker no estaba levantado cuando se escribió [`01-descripcion.md`](01-descripcion.md) |
 
-**La causa es una sola**: el motor de Docker de la máquina dejó de arrancar el
-10/11. El proceso de Docker Desktop corre, la distro WSL `docker-desktop` queda
-en `Stopped` y el *pipe* del motor nunca aparece.
+**Lo que quedó pendiente es de dos clases**, y hay que distinguirlas en la
+defensa: las capturas son material de presentación —los datos ya están
+verificados contra las APIs de cada herramienta, que es evidencia más fuerte
+que una captura—, mientras que el `curl` de D-01 es una verificación técnica
+real que falta.
 
 ---
 
@@ -155,3 +181,17 @@ en `Stopped` y el *pipe* del motor nunca aparece.
 7. **Firmar las imágenes** con `cosign` (§2).
 8. **Un cuarto flujo de n8n** que sincronice el repositorio con Nextcloud en
    cada *merge* a `develop` (§6).
+9. **Cerrar D-01**: `verificarToken` más el rol en los cinco archivos de rutas
+   que quedaron sin él, y revisar que el frente mande el token en cocina y en
+   los reportes de caja. Es de una línea por archivo y de varias pantallas por
+   verificar, que es por lo que no se hizo a última hora.
+10. **Igualar la versión de Node del CI (22) con la de las imágenes (24)**
+    ([`03-inventario.md`](03-inventario.md), §5). Es cambiar un `"22"` por un
+    `"24"` en el *workflow*, y evita la clase de error que sólo aparece cuando
+    un paquete nativo se compila contra otro ABI.
+11. **Fijar las imágenes base por `digest` y actualizarlas con Renovate o
+    Dependabot** ([`03-inventario.md`](03-inventario.md), §4). Hoy
+    `postgres:16-alpine` puede cambiar de versión sola, sin que nada en el
+    repositorio cambie.
+12. **Unificar la autorización en `verificarPermiso`** (D-04). Es lo que hace
+    que la tabla `roles_funciones` sirva para algo.
