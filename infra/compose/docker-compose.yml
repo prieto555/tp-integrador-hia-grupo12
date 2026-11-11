@@ -632,6 +632,42 @@ services:
       n8n-db:
         condition: service_healthy
 
+  # ───────────────────────────────────────────────────────────── punto 9
+  # El conector del tunel de Cloudflare.
+  #
+  # NO publica ningun puerto, y eso es todo el punto: el conector SALE hacia
+  # Cloudflare y el trafico vuelve por esa conexion. No hace falta abrir nada
+  # en el router, que ademas con el CGNAT del proveedor de Internet no se
+  # podria hacer.
+  #
+  # Que se publica y que no esta en infra/tunel/config.plantilla.yml, que es
+  # el archivo que se versiona y se revisa en el PR. Lo que no esta ahi no es
+  # alcanzable desde Internet.
+  cloudflared:
+    profiles: ["tunel"]
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: restoya_tunel
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      # Los dos archivos los genera infra/tunel/preparar-tunel.sh. OJO: si no
+      # existen, Docker crea CARPETAS con esos nombres y el conector no
+      # arranca (el mismo tropiezo que INC-17).
+      - ../tunel/config.generado.yml:/etc/cloudflared/config.yml:ro
+      - ../tunel/.credenciales.json:/etc/cloudflared/credenciales.json:ro
+    networks:
+      # Solo la red interna: desde aca se llega a frontend, y a nada de afuera.
+      - interna
+    # Sin depends_on a proposito. Poner "depends_on: frontend" hace que
+    # "docker compose --profile tunel" solo falle con "depends on undefined
+    # service", porque frontend vive en el perfil app y Compose exige que la
+    # dependencia este en un perfil habilitado. El tunel se levanta junto con
+    # el perfil app:
+    #
+    #     docker compose --profile app --profile tunel up -d
+    #
+    # Si nginx no esta arriba, Cloudflare devuelve 502 hasta que lo este.
+
 networks:
   interna:
     name: restoya_interna

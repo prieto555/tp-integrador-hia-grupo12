@@ -192,6 +192,17 @@ jobs:
           DB_REPLICA_PORT_HOST=5434
           REPLICACION_USER=replicador
           REPLICACION_RANURA=replica_1
+          # Los perfiles incidencias, documental y automatizacion NO se
+          # levantan en el CI, pero sus variables SI tienen que estar. Ver el
+          # comentario del paso "Validar el docker-compose.yml".
+          MANTIS_PORT=8089
+          MAILPIT_PORT=8025
+          MANTIS_ENABLE_ADMIN=0
+          NEXTCLOUD_ADMIN_USER=admin
+          NEXTCLOUD_PORT=8081
+          N8N_USER=admin
+          N8N_PORT=5678
+          SWAGGER_USER=swagger
           FIN
           # Las claves se generan al vuelo y no se imprimen.
           {
@@ -201,11 +212,41 @@ jobs:
             echo "ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
             echo "GRAFANA_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
             echo "REPLICACION_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "SWAGGER_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            # Estas ocho estan declaradas con ":?" en el compose, o sea
+            # obligatorias. Sin ellas la interpolacion aborta y no se valida
+            # NADA, ni siquiera el perfil app.
+            echo "MANTIS_DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "MANTIS_DB_ROOT_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "MANTIS_SALT=$(openssl rand -base64 48 | tr -d '/+=')"
+            echo "NEXTCLOUD_DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "NEXTCLOUD_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "N8N_DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "N8N_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')"
+            echo "N8N_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '/+=')"
           } >> .env
           chmod 600 .env
 
       # Valida el YAML y que no falte ninguna variable obligatoria, antes de
       # gastar varios minutos construyendo imagenes.
+      #
+      # OJO CON ALGO QUE NO ES OBVIO: Compose interpola el archivo ENTERO antes
+      # de mirar los perfiles. Asi que una variable declarada obligatoria
+      # (${VAR:?mensaje}) en un servicio que este paso NO levanta —Mantis,
+      # Nextcloud, n8n— igual hace fallar este comando, y con el mensaje
+      # apuntando a ese servicio, no al perfil app:
+      #
+      #     error while interpolating services.mantis.environment.MANTIS_SALT:
+      #     required variable MANTIS_SALT is missing a value
+      #
+      # Es decir: "--profile app" elige que se LEVANTA, no que se LEE. Por eso
+      # el .env de arriba define tambien las variables de los perfiles que acá
+      # no se usan. La alternativa era sacarles el ":?", y no conviene: ese
+      # guardia es el que evita que Mantis arranque con una sal vacia.
+      #
+      # Esto se descubrio en la primera corrida de develop con los tres
+      # perfiles nuevos adentro, que es exactamente cuando tenia que aparecer:
+      # ninguna de las dos ramas por separado lo disparaba.
       - name: Validar el docker-compose.yml
         working-directory: infra/compose
         run: docker compose --profile app config > /dev/null

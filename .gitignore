@@ -38,9 +38,11 @@ infra/incidencias/.token-api
 # generado por preparar-n8n.sh
 infra/prometheus/.token-alertas
 
-# Punto 9: lo que deja cloudflared al crear el tunel. El .json lleva el
-# secreto del tunel y el .yml lleva su id: ninguno de los dos va al
-# repositorio publico. Se regeneran con infra/tunel/preparar-tunel.sh.
+# Punto 9: credenciales del tunel de Cloudflare y la configuracion generada
+# a partir de la plantilla. Las genera infra/tunel/preparar-tunel.sh.
 infra/tunel/.credenciales.json
 infra/tunel/config.generado.yml
+# Red de seguridad: cloudflared nombra el archivo de credenciales con el id
+# del tunel (<uuid>.json) cuando se lo crea a mano, no con preparar-tunel.sh.
+# Esa variante no la cubren las dos lineas de arriba.
 infra/tunel/*.json
