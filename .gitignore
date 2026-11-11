@@ -42,3 +42,7 @@ infra/prometheus/.token-alertas
 # a partir de la plantilla. Las genera infra/tunel/preparar-tunel.sh.
 infra/tunel/.credenciales.json
 infra/tunel/config.generado.yml
+# Red de seguridad: cloudflared nombra el archivo de credenciales con el id
+# del tunel (<uuid>.json) cuando se lo crea a mano, no con preparar-tunel.sh.
+# Esa variante no la cubren las dos lineas de arriba.
+infra/tunel/*.json
