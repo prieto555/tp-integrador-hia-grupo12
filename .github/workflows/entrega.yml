@@ -81,9 +81,19 @@ jobs:
           context: ${{ matrix.contexto }}
           push: false
           load: true
+          # Sin esto, build-push-action reutiliza la capa base que haya en
+          # la cache de GitHub, que puede ser de hace semanas. Para un
+          # pipeline que escanea vulnerabilidades, eso es escanear una foto
+          # vieja.
+          pull: true
           tags: ${{ steps.nombre.outputs.imagen }}:prueba
-          cache-from: type=gha,scope=${{ matrix.componente }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.componente }}
+          # Sin cache a proposito. La imagen que se escanea tiene que ser
+          # la que describe el package-lock, no una capa reutilizada: con
+          # cache, Trivy reportaba brace-expansion 5.0.9 y undici 6.28.0,
+          # versiones que el lock de este repositorio ya no tiene. Cuesta
+          # unos minutos de construccion y compra que el escaneo diga la
+          # verdad.
+          no-cache: true
 
       # Se escanea ANTES de publicar. Publicar y escanear despues significa
       # que la imagen con la vulnerabilidad ya esta disponible para que
@@ -103,19 +113,33 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      # El nombre de la rama se usa como etiqueta, y las ramas de este
+      # proyecto llevan barra (fix/..., feature/..., docs/...). Una barra no
+      # es valida en una etiqueta de imagen y buildx corta con "invalid
+      # reference format" DESPUES de construir y escanear, tirando todo el
+      # trabajo. Se reemplaza por guion.
+      - name: Etiqueta de rama valida
+        id: rama
+        run: |
+          cruda="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          echo "etiqueta=${cruda//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: Publicar
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.contexto }}
           push: true
+          pull: true
           # Tres etiquetas: el SHA para poder volver a una version exacta
           # (es lo que usa el rollback), la rama para seguir la ultima de cada
           # una, y "latest" solo desde main.
           tags: |
             ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_sha || github.sha }}
-            ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_branch || github.ref_name }}
+            ${{ steps.nombre.outputs.imagen }}:${{ steps.rama.outputs.etiqueta }}
             ${{ github.event.workflow_run.head_branch == 'main' && format('{0}:latest', steps.nombre.outputs.imagen) || '' }}
-          cache-from: type=gha,scope=${{ matrix.componente }}
+          # Lo mismo que arriba: si esta construccion usara cache, se
+          # publicaria algo distinto de lo que paso el escaneo.
+          no-cache: true
 
       - name: Resumen
         run: |

@@ -30,6 +30,15 @@ RUN npx ng build --configuration production
 # (brotli, curl, c-ares...), ninguna del codigo de este proyecto.
 FROM nginx:1.29-alpine AS runtime
 
+# Parches del sistema base. Fijar la etiqueta (nginx:1.29-alpine) da
+# reproducibilidad, pero NO da parches: la etiqueta se reconstruye cuando el
+# que la publica quiere, y mientras tanto arrastra las vulnerabilidades que
+# Alpine ya corrigio en su repositorio. El escaneo del 11/11 lo mostro:
+# 1 CRITICA y 56 ALTAS, ninguna del codigo de este proyecto y TODAS con
+# parche disponible (brotli 1.2.0-r0 -> 1.2.1-r0, c-ares, curl...).
+# Esta linea toma esos parches en cada construccion.
+RUN apk --no-cache upgrade
+
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=build /app/dist/proyfrontendgrupo13/browser /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

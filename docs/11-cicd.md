@@ -292,6 +292,88 @@ mkdir actions-runner && cd actions-runner
 
 ---
 
+## 8 bis. La primera corrida real de Entrega, y los cuatro problemas que trajo
+
+Hasta el **11/11** este flujo **nunca se había ejecutado**. Está escrito desde
+el 10/11, pero su condición es
+
+```yaml
+if: github.event.workflow_run.conclusion == 'success'
+```
+
+y el CI de `develop` estaba en rojo desde que entraron los perfiles de
+incidencias, documental y automatización. Las cuatro ejecuciones anteriores
+salieron `skipped`.
+
+> **Un paso que nunca corre no falla nunca.** Un *pipeline* que no se ejecuta
+> no está verificado aunque esté escrito, y eso vale igual para el YAML más
+> prolijo. Es la misma lección que los cinco errores silenciosos de los flujos
+> de n8n ([`14-automatizacion.md`](14-automatizacion.md) §8).
+
+Al mergear el arreglo del CI, `develop` quedó en verde, Entrega corrió, y
+aparecieron **cuatro problemas, uno atrás del otro**. Ninguno se veía leyendo
+el archivo.
+
+| # | Qué falló | Por qué |
+|---|---|---|
+| 1 | `Unable to resolve action aquasecurity/trivy-action@0.28.0` | Esa acción publica sus versiones **con prefijo `v`**. La etiqueta sin prefijo no existe, y GitHub corta **antes de correr un solo paso** |
+| 2 | Trivy cortó: frontend **57** (1 CRÍTICA, 56 ALTAS), backend **6 ALTAS** | **El pipeline haciendo su trabajo.** Ninguna del código del proyecto: paquetes del Alpine de la imagen base, todas con parche publicado. La crítica era `brotli-libs` CVE-2026-111497 |
+| 3 | El backend seguía con 6 ALTAS después de parchear Alpine | `brace-expansion 5.0.9` y `undici 6.28.0`, versiones que el `package-lock.json` **no tiene** (dice 5.0.12). Trivy las agrupa bajo **«Node.js (node-pkg)»**: viven dentro de `node:24-alpine`, en el **npm que la imagen trae empaquetado** |
+| 4 | `invalid tag "...:fix/imagenes-vulnerables"` | Los nombres de rama llevan barra y una barra no es válida en una etiqueta de imagen. El fallo llega **después** de construir y escanear, o sea tirando el trabajo hecho |
+
+### Lo que se cambió, y por qué cada cosa
+
+1. **`apk --no-cache upgrade` en las etapas de ejecución.** Fijar la etiqueta de
+   la imagen base da reproducibilidad pero **no da parches**: `nginx:1.29-alpine`
+   se reconstruye cuando su autor quiere, y mientras tanto arrastra lo que
+   Alpine ya corrigió. Es exactamente lo que advierte
+   [`03-inventario.md`](03-inventario.md) §4: fijar sin nada que avise cuando lo
+   fijado queda viejo. El `Dockerfile` del frontend ya tenía el comentario de
+   cuando se subió de 1.27 a 1.29 **por este mismo motivo**. Volvió a pasar, y
+   esta vez el arreglo no es subir el número sino tomar los parches en cada
+   construcción.
+2. **`no-cache: true` en las dos construcciones.** Para un *pipeline* cuyo
+   trabajo es escanear, reutilizar una capa de hace semanas es escanear una
+   foto vieja. Y la construcción que se publica tiene que ser **la misma** que
+   pasó el escaneo, no una equivalente.
+3. **Se sacó npm, npx y corepack de la imagen del backend.** No es una
+   optimización de tamaño: es el arreglo de las 6 ALTAS del punto 3 de la tabla.
+   El contenedor arranca con `dumb-init node index.js` y nunca llama a npm —las
+   dependencias se instalan en la etapa `deps` y se copian ya resueltas—, así
+   que un gestor de paquetes adentro es superficie de ataque sin contrapartida.
+4. **La etiqueta de rama se calcula reemplazando `/` por `-`.**
+
+### La corrida en verde
+
+```
+Construir, escanear y publicar (backend, ./backend):   success
+Construir, escanear y publicar (frontend, ./frontend): success
+Desplegar en el servidor del equipo:                   skipped
+```
+
+Con las imágenes empujadas de verdad, cada una con sus dos etiquetas:
+
+```
+pushing manifest for ghcr.io/prieto555/tp-integrador-hia-grupo12/backend:f9d8703…
+  @sha256:c1c718fb51390e9b348faa8e6dc393d9c2684a0f0d065ea430a6a0a4808bfcba
+pushing manifest for ghcr.io/prieto555/tp-integrador-hia-grupo12/backend:fix-imagenes-vulnerables
+pushing manifest for ghcr.io/prieto555/tp-integrador-hia-grupo12/frontend:f9d8703…
+  @sha256:66ef3ed2db4aab5ae8575c0224deb1820074c4b3fb10589cf5b81d372fb496cd
+```
+
+Eso cierra el entregable **«Publicar las imágenes en un registro»**. El trabajo
+de despliegue sigue en `skipped` y es correcto: sólo corre desde `main` y sobre
+el *runner* autoalojado, que no está registrado (§8 y §9).
+
+> **Para la defensa, lo que vale no es que haya salido verde: es el orden en
+> que salió rojo.** Cuatro fallos encadenados, cada uno tapado por el anterior,
+> y el segundo era el *pipeline* funcionando: cortó la publicación de una imagen
+> con una vulnerabilidad crítica. Eso es literalmente lo que pide la consigna
+> —*«El pipeline deberá evitar que una modificación defectuosa se publique»*— y
+> no se puede demostrar con un YAML, sólo con una corrida.
+
+---
+
 ## 9. Limitaciones
 
 Lo que **no** está, dicho sin maquillaje:

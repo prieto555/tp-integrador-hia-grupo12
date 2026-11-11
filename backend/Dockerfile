@@ -15,9 +15,37 @@ RUN npm ci --omit=dev
 
 FROM node:24-alpine AS runtime
 
+# Parches del sistema base. Fijar la etiqueta (node:24-alpine) da
+# reproducibilidad, pero NO da parches: la etiqueta se reconstruye cuando el
+# que la publica quiere, y mientras tanto arrastra las vulnerabilidades que
+# Alpine ya corrigio en su repositorio. El escaneo del 11/11 lo mostro:
+# 1 CRITICA y 56 ALTAS, ninguna del codigo de este proyecto y TODAS con
+# parche disponible (brotli 1.2.0-r0 -> 1.2.1-r0, c-ares, curl...).
+# Esta linea toma esos parches en cada construccion.
+RUN apk --no-cache upgrade
+
 # dumb-init como PID 1: Node no reenvia SIGTERM a sus hijos y sin esto el
 # contenedor tarda 10 segundos en morir en cada docker compose down.
 RUN apk add --no-cache dumb-init
+
+# Se saca npm y corepack de la imagen de ejecucion.
+#
+# No es una optimizacion de tamanio: es el arreglo de 6 vulnerabilidades ALTAS
+# que el escaneo del 11/11 encontro y que NO son de este proyecto. Trivy las
+# agrupa bajo "Node.js (node-pkg)" y vienen dentro de la propia imagen
+# node:24-alpine: brace-expansion 5.0.9 y undici 6.28.0 viven en el npm que
+# la imagen trae empaquetado, no en app/node_modules. El package-lock de este
+# repositorio tiene 5.0.12, o sea que el problema no estaba en nuestras
+# dependencias y no habia forma de arreglarlo desde el lock.
+#
+# El contenedor arranca con "dumb-init node server.js" y nunca llama a npm:
+# las dependencias se instalan en la etapa "deps" y se copian ya resueltas.
+# Un gestor de paquetes dentro de una imagen de produccion es superficie de
+# ataque sin contrapartida: si alguien logra ejecutar algo adentro, npm le da
+# como instalar lo que quiera.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 ENV NODE_ENV=production
 
