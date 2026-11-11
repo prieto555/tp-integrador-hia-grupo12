@@ -553,6 +553,81 @@ de terceros del *compose* no se escanean. Eso también queda anotado.
 
 ---
 
+## 17 · pgAdmin: la consola de la base, abierta y ya conectada
+
+Apareció el 11/11 sacando la captura que faltaba del punto 4, y es **el mismo
+error que el hallazgo 15**: credenciales configuradas que nadie exige.
+
+El `compose` declara esto:
+
+```yaml
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+```
+
+Las dos primeras líneas dan a entender que hay un usuario y una clave. Las dos
+siguientes las **anulan**: `SERVER_MODE: False` pone a pgAdmin en modo
+escritorio, que **no tiene inicio de sesión**, y `MASTER_PASSWORD_REQUIRED:
+False` saca también la clave maestra que protege las credenciales guardadas.
+
+Medido, sin ninguna cookie:
+
+```
+$ curl -s -D - -o /dev/null http://127.0.0.1:5050/
+HTTP/1.1 302 FOUND
+Location: /browser/
+
+$ curl -sL -o /dev/null -w "%{url_effective} -> %{http_code}
+" http://127.0.0.1:5050/
+http://127.0.0.1:5050/browser/ -> 200
+```
+
+No hay redirección a ningún `/login`: la consola se sirve directamente. La
+captura [`capturas/60-pgadmin-sin-credenciales.png`](capturas/60-pgadmin-sin-credenciales.png)
+es la interfaz completa, abierta sin escribir nada.
+
+**Y hay una segunda mitad, peor.** `pgadmin-servers.json` registra el servidor
+pero **no guarda la clave**, así que en teoría conectarse debería pedirla. No la
+pide: pgAdmin la tiene guardada en su volumen `pgadmin_data` de una sesión
+anterior, y como no hay clave maestra, **esa credencial guardada tampoco está
+protegida**. Al hacer doble clic sobre el servidor conectó solo. La captura
+[`capturas/61-pgadmin-conectado.png`](capturas/61-pgadmin-conectado.png) lo
+muestra: `restoyadb` desplegada hasta `Tables (12)`, con el panel de actividad
+en vivo.
+
+O sea que quien llegue al puerto 5050 no obtiene *una herramienta* para
+administrar la base: obtiene **una sesión ya abierta como `restoya`** sobre
+30 millones de filas, con el editor de SQL incluido.
+
+**Lo que lo contiene hoy, y es lo mismo que contiene a n8n:** el puerto se
+publica en `127.0.0.1` y **no está en el *ingress* del túnel** (ver
+[`15-publicacion.md`](15-publicacion.md) §3, donde pgAdmin figura
+explícitamente entre los nueve servicios que **no** se publican, con el motivo
+escrito: «con eso se lee y se borra todo»). Desde Internet no se llega.
+
+**Documentado y no corregido**, y la razón es la misma que en D-01: cambiar a
+`SERVER_MODE: True` a días de la defensa obliga a rehacer el alta del servidor
+y la clave maestra, y si algo sale mal se pierde el cliente de administración
+que el punto 4 pide **demostrar funcionando**. El arreglo, en orden:
+
+1. `PGADMIN_CONFIG_SERVER_MODE: "True"`, que es lo que enciende el inicio de
+   sesión con `PGADMIN_DEFAULT_EMAIL` y `PGADMIN_DEFAULT_PASSWORD` —las dos
+   variables que hoy están puestas y no sirven para nada;
+2. `MASTER_PASSWORD_REQUIRED: "True"`, para que la clave de la base guardada en
+   el volumen quede cifrada detrás de algo;
+3. dejar escrito en el `compose` que el puerto no se publica, igual que se hizo
+   con n8n en el PR #7.
+
+> **La lección, que es la misma de los hallazgos 15 y 17 juntos:** en los dos
+> casos había variables de credenciales en el `.env` y nadie las exigía. Tener
+> una clave configurada no es lo mismo que tener una clave pedida, y la única
+> forma de notar la diferencia es **entrar y mirar**. Las dos aparecieron
+> sacando capturas, no leyendo la configuración.
+
+---
+
 ## Matriz de amenazas (E14-04)
 
 Las cinco familias que pide la consigna, con lo que hay hoy y lo que falta. La
@@ -654,83 +729,6 @@ exactos con el origen. Está medido, no estimado
 Abrir la incidencia en Mantis (punto 11) con: qué pasó, desde cuándo, cómo se
 detectó, qué se hizo y **qué se cambia para que no vuelva a pasar**. Sin ese
 último punto el ciclo no se cierra, sólo se repite.
-
----
-
-## 17 · pgAdmin: la consola de la base, abierta y ya conectada
-
-Apareció el 11/11 sacando la captura que faltaba del punto 4, y es **el mismo
-error que el hallazgo 15**: credenciales configuradas que nadie exige.
-
-El `compose` declara esto:
-
-```yaml
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
-```
-
-Las dos primeras líneas dan a entender que hay un usuario y una clave. Las dos
-siguientes las **anulan**: `SERVER_MODE: False` pone a pgAdmin en modo
-escritorio, que **no tiene inicio de sesión**, y `MASTER_PASSWORD_REQUIRED:
-False` saca también la clave maestra que protege las credenciales guardadas.
-
-Medido, sin ninguna cookie:
-
-```
-$ curl -s -D - -o /dev/null http://127.0.0.1:5050/
-HTTP/1.1 302 FOUND
-Location: /browser/
-
-$ curl -sL -o /dev/null -w "%{url_effective} -> %{http_code}
-" http://127.0.0.1:5050/
-http://127.0.0.1:5050/browser/ -> 200
-```
-
-No hay redirección a ningún `/login`: la consola se sirve directamente. La
-captura [`capturas/60-pgadmin-sin-credenciales.png`](capturas/60-pgadmin-sin-credenciales.png)
-es la interfaz completa, abierta sin escribir nada.
-
-**Y hay una segunda mitad, peor.** `pgadmin-servers.json` registra el servidor
-pero **no guarda la clave**, así que en teoría conectarse debería pedirla. No la
-pide: pgAdmin la tiene guardada en su volumen `pgadmin_data` de una sesión
-anterior, y como no hay clave maestra, **esa credencial guardada tampoco está
-protegida**. Al hacer doble clic sobre el servidor conectó solo. La captura
-[`capturas/61-pgadmin-conectado.png`](capturas/61-pgadmin-conectado.png) lo
-muestra: `restoyadb` desplegada hasta `Tables (12)`, con el panel de actividad
-en vivo.
-
-O sea que quien llegue al puerto 5050 no obtiene *una herramienta* para
-administrar la base: obtiene **una sesión ya abierta como `restoya`** sobre
-30 millones de filas, con el editor de SQL incluido.
-
-**Lo que lo contiene hoy, y es lo mismo que contiene a n8n:** el puerto se
-publica en `127.0.0.1` y **no está en el *ingress* del túnel** (ver
-[`15-publicacion.md`](15-publicacion.md) §3, donde pgAdmin figura
-explícitamente entre los nueve servicios que **no** se publican, con el motivo
-escrito: «con eso se lee y se borra todo»). Desde Internet no se llega.
-
-**Documentado y no corregido**, y la razón es la misma que en D-01: cambiar a
-`SERVER_MODE: True` a días de la defensa obliga a rehacer el alta del servidor
-y la clave maestra, y si algo sale mal se pierde el cliente de administración
-que el punto 4 pide **demostrar funcionando**. El arreglo, en orden:
-
-1. `PGADMIN_CONFIG_SERVER_MODE: "True"`, que es lo que enciende el inicio de
-   sesión con `PGADMIN_DEFAULT_EMAIL` y `PGADMIN_DEFAULT_PASSWORD` —las dos
-   variables que hoy están puestas y no sirven para nada;
-2. `MASTER_PASSWORD_REQUIRED: "True"`, para que la clave de la base guardada en
-   el volumen quede cifrada detrás de algo;
-3. dejar escrito en el `compose` que el puerto no se publica, igual que se hizo
-   con n8n en el PR #7.
-
-> **La lección, que es la misma de los hallazgos 15 y 17 juntos:** en los dos
-> casos había variables de credenciales en el `.env` y nadie las exigía. Tener
-> una clave configurada no es lo mismo que tener una clave pedida, y la única
-> forma de notar la diferencia es **entrar y mirar**. Las dos aparecieron
-> sacando capturas, no leyendo la configuración.
-
----
 
 ## Lo que falta y lo que no se pudo comprobar
 
