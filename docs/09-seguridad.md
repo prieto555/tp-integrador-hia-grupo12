@@ -28,7 +28,7 @@ es el código, no una corrida.
 | 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
 | 13 | Las cabeceras de seguridad de nginx no llegaban a ninguna respuesta de HTML | Media | **Corregido** |
 | 14 | Al publicar, el límite de login pasó a ser un interruptor global | Alta | **Corregido** |
-| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Cerrada la ventana; la causa sigue** |
+| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Corregida** (PR #7) |
 | 16 | La imagen de n8n está marcada como crítica por el propio n8n | Media | **Documentado, no corregido** |
 
 ---
@@ -503,20 +503,30 @@ sea que n8n ya no le ofrece el sistema al primero que entre.
 > cuenta era una decisión suya, no de quien estaba sacando capturas. Que la
 > ventana estuviera abierta no la convertía en una invitación.
 
-**Pero la causa sigue en pie, y es lo que importa:**
+**La causa se corrigió aparte, en el [PR #7](https://github.com/prieto555/tp-integrador-hia-grupo12/pull/7)**, en la rama `fix/n8n-autenticacion`. Reclamar
+la cuenta sólo cerraba la ventana en **esta** máquina: mientras el `compose`
+siguiera diciendo que n8n pide usuario y clave, el próximo que levantara el
+proyecto en una máquina limpia iba a creer que está protegido, y la ventana se
+abría de nuevo.
 
-1. el `compose` **sigue diciendo que pide usuario y clave**, con tres variables
-   que no hacen nada. Mientras ese comentario esté, el próximo que levante el
-   proyecto en una máquina limpia va a creer que está protegido, y va a volver
-   a quedar con la ventana abierta hasta que alguien reclame la cuenta;
-2. el arreglo de verdad es **borrar las tres variables y el comentario**, y
-   dejar escrito que la protección de n8n es que el puerto está en
-   `127.0.0.1` y fuera del *ingress*;
-3. si alguna vez hiciera falta publicarlo, poner algo delante que autentique.
+Qué hace ese PR:
 
-No se tocó el `compose` acá a propósito: ese archivo es de otra rama (la del
-túnel y la de procesos), y mezclar un cambio de infraestructura en el PR de
-documentación es cómo se pierde la trazabilidad de qué rompió qué.
+1. **borra las tres variables y el comentario falso**, y deja en su lugar escrito
+   por qué no están, para que nadie las vuelva a poner;
+2. cambia `N8N_USER` —que no leía nadie— por `N8N_EMAIL`, que es lo que n8n pide
+   de verdad para la cuenta de propietario, con la regla de la clave anotada
+   (ocho caracteres, un número y una mayúscula, o devuelve 400 sin explicar);
+3. deja dicho que la protección real de n8n hoy son dos cosas: la cuenta de
+   propietario, y que el puerto está en `127.0.0.1` y **fuera del *ingress***.
+
+**Lo que sigue sin resolverse:** si alguna vez hiciera falta publicar n8n, hay
+que poner algo delante que autentique. Las cuentas de usuario de n8n no alcanzan
+para un servicio con estas credenciales adentro expuesto a Internet.
+
+El cambio fue a un PR aparte y no a éste, que es de documentación: mezclar un
+cambio de infraestructura en el PR de los informes es cómo se pierde la
+trazabilidad de qué rompió qué. Por eso la rama se llama `fix/`, que es una de
+las cuatro que define la estrategia de ramas del punto 3.
 
 ### 16 · La imagen de n8n está marcada como crítica por el propio n8n
 
