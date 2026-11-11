@@ -3,11 +3,15 @@
 Entregable del punto 15.10. Cubre el **punto 9** de la consigna: dejar la
 aplicación accesible desde Internet durante la demostración final.
 
-> **Estado, antes que nada.** El túnel está **creado y con su registro DNS dado
-> de alta**: la aplicación va a quedar en `https://restoya.liners-panel.com`.
-> Lo que falta es levantarlo y probarlo desde afuera, porque el motor de Docker
-> de la máquina está caído. La sección 6 tiene lo que ya se verificó, con la
-> salida de cada comando, y la sección 7 lo que queda.
+> **Estado, antes que nada.** La aplicación **está publicada** en
+> **https://restoya.liners-panel.com** y se probó por Internet, no en local.
+>
+> La publicación destapó **dos problemas que en local no se veían**, y los dos
+> están arreglados y medidos en la sección 6: las tres cabeceras de seguridad
+> de nginx no llegaban a ninguna respuesta de HTML, y —el grave— **el backend
+> veía la IP de un contenedor en vez de la del visitante**, lo que convertía el
+> límite de intentos de inicio de sesión en un interruptor para dejar afuera a
+> todo el mundo. La sección 7 dice lo que todavía falta.
 
 ---
 
@@ -339,58 +343,258 @@ contraseña sino **fuera del camino**.
 
 ---
 
-## 7 · Lo que falta, con nombre y apellido
+### 6.4 · Publicado, y los dos problemas que la publicación destapó
 
-### 7.1 · Levantarlo y probarlo desde afuera
-
-El túnel está preparado pero **no levantado**, y la aplicación tampoco está
-corriendo: el motor de Docker de la máquina está caído (el servicio
-`com.docker.service` y la distro WSL `docker-desktop` en `Stopped`). Es el
-mismo problema que ya apareció tres veces en este trabajo.
-
-Con Docker arriba son dos comandos:
+El túnel se levantó junto con la aplicación:
 
 ```bash
-cd infra/compose && docker compose --profile app --profile tunel up -d
+docker compose --profile app --profile tunel up -d
 ```
 
-Y la prueba que de verdad cierra el punto 9: **entrar a
-`https://restoya.liners-panel.com` desde una red que no sea ésta** —el celular
-con datos móviles, no con el WiFi de la casa—. Desde la misma red el navegador
-podría estar resolviendo por otro camino y la prueba no probaría nada.
+y registró cuatro conexiones con la red de Cloudflare, dos a cada *datacenter*
+de Buenos Aires (`eze02` y `eze07`), por QUIC:
 
-Dos comprobaciones más, que son las que distinguen "anda" de "anda bien":
-
-1. que `https://restoya.liners-panel.com/api/productos` devuelva el menú (o
-   sea que el *proxy* de `/api/` funciona a través del túnel, no sólo el
-   frente);
-2. que `https://restoya.liners-panel.com/metrics` devuelva el `index.html` de
-   la SPA **y no las métricas**. Ya se comprobó por el camino de nginx; hay que
-   repetirlo por el camino del túnel, porque es el que queda expuesto.
-
-### 7.2 · Una verificación que hay que hacer con el túnel arriba
-
-**Qué IP ve el backend.** `backend/index.js:18` tiene:
-
-```js
-app.set('trust proxy', 1);
+```
+INF Registered tunnel connection connIndex=0 ip=198.41.192.107 location=eze02 protocol=quic
+INF Registered tunnel connection connIndex=1 ip=198.41.200.233 location=eze07 protocol=quic
+INF Registered tunnel connection connIndex=2 ip=198.41.192.77  location=eze02 protocol=quic
+INF Registered tunnel connection connIndex=3 ip=198.41.200.43  location=eze07 protocol=quic
 ```
 
-El `1` son los saltos de confianza: exactamente nginx. **Con el túnel, los
-saltos son más**: Cloudflare agrega `X-Forwarded-For` y `CF-Connecting-IP`. Si
-el backend termina leyendo la IP equivocada —o peor, siempre la misma—, el
-límite de diez intentos de inicio de sesión **deja de distinguir clientes** y
-pasa a ser un límite global: con dos personas probando la aplicación a la vez,
-una bloquea a la otra.
+Lo primero que se probó fue lo que tenía que estar y lo que **no** tenía que
+estar:
 
-La comprobación es concreta y hay que hacerla el mismo día: entrar por el
-dominio, fallar un inicio de sesión, y mirar qué IP quedó en
-`historial_accesos`. Si no es la IP real del visitante, hay que subir el número
-de saltos o leer `CF-Connecting-IP`.
+| Pedido a `https://restoya.liners-panel.com` | Resultado | Qué prueba |
+|---|---|---|
+| `/` | **200**, 16.695 bytes, `text/html` | la aplicación se sirve |
+| `/api/productos` | **200**, 1.083 bytes, `application/json` | el *proxy* de `/api/` funciona **a través del túnel**, no sólo en local |
+| `/platos` | 200, 16.695 bytes, `text/html` | el ruteo de Angular anda: devuelve `index.html`, no un 404 |
+| `/metrics` | 200, **16.695 bytes, `text/html`** | **no son las métricas**: es el `index.html`. Se confirmó leyendo el cuerpo, que empieza con `<!doctype html>` |
+| `/api-docs` | 200, 16.695 bytes, `text/html` | tampoco es Swagger |
 
-Está anotado también en [`16-limitaciones.md`](16-limitaciones.md), §1.3.
+Las tres respuestas de 16.695 bytes son el mismo archivo. Eso es la prueba de
+que `/metrics` y `/api-docs` **no están protegidos: están fuera del camino**,
+que es más fuerte, porque no depende de que una contraseña siga puesta.
 
-### 7.3 · Lo que no se va a hacer, y por qué
+El certificado y el camino:
+
+```
+$ openssl x509 -noout -issuer -subject -dates
+issuer=C=US, O=Let's Encrypt, CN=YE1
+subject=CN=liners-panel.com
+notBefore=Oct 17 20:51:48 2026 GMT
+notAfter=Jan 15 20:51:47 2027 GMT
+```
+
+```
+Server: cloudflare
+CF-RAY: a589443e683d6d4a-EZE
+```
+
+El `CF-RAY` con sufijo `EZE` prueba que la petición pasó por el *datacenter* de
+Ezeiza y no por un atajo local. Y el certificado lo emite y lo renueva
+Cloudflare: no hay que administrar nada.
+
+---
+
+#### Problema 1: las tres cabeceras de seguridad de nginx no llegaban a ninguna parte
+
+Al mirar las cabeceras de la respuesta apareció esto:
+
+```
+$ curl -sI https://restoya.liners-panel.com/
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Server: cloudflare
+```
+
+Faltaban `X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy`, que
+`nginx.conf` declara a nivel del servidor **con `always`**. Lo primero fue
+descartar que las sacara Cloudflare, pidiendo directo a nginx:
+
+```
+$ curl -sI http://127.0.0.1:8080/
+Cache-Control: no-cache          <- y nada mas
+```
+
+No era Cloudflare. Tampoco era sólo la página principal:
+
+| Pedido local | Cabeceras de seguridad |
+|---|---|
+| `/` | **ninguna** |
+| `/scripts-47AA7252.js` | **ninguna** |
+| `/no-existe-nada` | **ninguna** |
+| `/api/productos` | las tres… **duplicadas**, con dos `Referrer-Policy` de valor distinto |
+
+La causa es una regla de nginx que no es intuitiva: **si un bloque `location`
+tiene un `add_header` propio, no hereda ninguno de los del padre.** Los dos
+bloques que ponían un `Cache-Control` —el de los archivos con *hash* y el de
+`index.html`— se estaban comiendo las tres cabeceras de seguridad enteras. Y
+como `location /` hace `try_files` hacia `/index.html`, hasta la página
+principal caía en ese bloque.
+
+El `always` no tiene nada que ver: eso sólo decide si la cabecera se agrega
+también en las respuestas de error.
+
+El efecto neto era **exactamente el contrario del buscado**. El comentario del
+archivo decía: *"El backend ya pone las suyas con Helmet, pero los archivos
+estáticos no pasan por el backend"*. Y lo que pasaba era que `/api/` —que ya
+las tenía por Helmet— las recibía dos veces, y los archivos estáticos, que son
+la única razón por la que esas líneas existen, no recibían ninguna.
+
+**Arreglo:** las tres cabeceras se declaran en cada bloque que sirve contenido
+y se saca del nivel del servidor, así `/api/` queda sólo con las de Helmet.
+Verificado después de recargar nginx:
+
+```
+$ curl -sI https://restoya.liners-panel.com/
+Cache-Control: no-cache
+referrer-policy: strict-origin-when-cross-origin
+x-content-type-options: nosniff
+x-frame-options: SAMEORIGIN
+
+$ curl -sI http://127.0.0.1:8080/api/productos | grep -c x-content-type-options
+1
+```
+
+---
+
+#### Problema 2: el backend veía la IP de un contenedor, no la del visitante
+
+Éste es el que de verdad importa, y es el que estaba anotado como verificación
+pendiente en la sección 7 **antes** de correrlo. Salió mal, como se temía, pero
+por un motivo distinto del previsto.
+
+La medición: se hizo un `POST /api/pedidos` por el túnel —es una de las rutas
+públicas, la que usa el cliente que escanea el QR— y se leyó qué IP guardó el
+middleware de auditoría.
+
+```
+$ curl -s https://cloudflare.com/cdn-cgi/trace | grep ^ip=
+ip=181.177.197.253
+
+$ select "idHistorial", ip, metodo from historial_accesos order by 1 desc limit 1
+6000008 | 172.24.0.17 | AUDITORIA: POST en /api/pedidos
+```
+
+`172.24.0.17` es el contenedor de `cloudflared` dentro de la red de Docker.
+
+**Por qué, y acá está lo que no se sabía: `cloudflared` no manda
+`X-Forwarded-For`. Manda `CF-Connecting-IP`.** Entonces el
+`$proxy_add_x_forwarded_for` de nginx no tenía ninguna cadena que ampliar y
+quedaba con un solo elemento: la IP del propio `cloudflared`. Express, con
+`trust proxy = 1`, descarta ese único salto y se queda sin nada que mirar, así
+que cae en la IP del socket.
+
+La consecuencia es peor que un dato mal registrado. **El limitador de intentos
+de inicio de sesión cuenta por IP.** Con todas las peticiones de Internet
+llegando con la misma IP:
+
+> diez intentos fallidos de cualquiera dejan afuera a **todo el mundo** durante
+> quince minutos.
+
+El control que se ajustó en el punto 14 para frenar la fuerza bruta —de 100
+intentos a 10— se convierte, al publicar, en una forma de **apagar el inicio de
+sesión del sistema desde afuera, gratis y sin autenticarse**. Y encima el
+historial de accesos deja de servir para nada: todas las filas con la misma IP.
+
+Vale subrayar una cosa: **el punto 14 dio este control por cerrado y
+verificado, y lo estaba** — en local. Lo rompió *publicar*. Es la razón por la
+que el punto 9 no es "poner la aplicación en Internet" y listo.
+
+**Arreglo**, en `frontend/nginx.conf`: un `map` que elige de dónde sale la IP.
+
+```nginx
+map $http_cf_connecting_ip $ip_del_visitante {
+    ""      $proxy_add_x_forwarded_for;
+    default $http_cf_connecting_ip;
+}
+```
+
+y después `proxy_set_header X-Forwarded-For $ip_del_visitante;`.
+
+Si viene `CF-Connecting-IP`, ésa es la IP del visitante. Si no viene —acceso
+local, sin túnel— se usa la cadena normal de nginx, así que levantar el
+proyecto sin el perfil `tunel` sigue funcionando igual. **No se tocó
+`trust proxy = 1`**: sigue habiendo exactamente un salto de confianza, nginx, y
+ahora lo que nginx le pasa es la IP correcta.
+
+Es seguro confiar en esa cabecera **sólo porque a este nginx no se llega de
+otra forma**: el puerto 80 no está publicado en la LAN, únicamente en
+`127.0.0.1` y a través del túnel. Si algún día se publica el puerto, la
+cabecera pasa a ser falsificable y hay que reemplazar el `map` por una lista de
+IP de confianza de Cloudflare. Quedó escrito en el propio archivo.
+
+**Verificación, con el antes y el después en la misma tabla** —las tres filas
+son mediciones reales, no un ejemplo—:
+
+```
+ idHistorial |       ip        | metodo
+-------------+-----------------+--------------------------------
+     6000010 | 172.24.0.1      | AUDITORIA: POST en /api/pedidos   <- local, despues del arreglo
+     6000009 | 181.177.197.253 | AUDITORIA: POST en /api/pedidos   <- por el tunel, despues
+     6000008 | 172.24.0.17     | AUDITORIA: POST en /api/pedidos   <- por el tunel, ANTES
+```
+
+La fila 6000009 es la IP pública real, la misma que reporta
+`cloudflare.com/cdn-cgi/trace`. La 6000010 prueba que el camino local no se
+rompió: sigue registrando la puerta de enlace de Docker, igual que antes.
+
+Los tres pedidos de prueba se borraron después de medir, y las tablas quedaron
+en los 6.000.000 de filas exactos que tenían (`pedidos`, `detalle_pedidos` y
+`pagos`). Las tres filas del historial se dejaron a propósito: son la medición.
+
+> **Nota sobre el estado del contenedor.** El arreglo de `nginx.conf` se probó
+> copiándolo al contenedor en marcha y recargando nginx (`nginx -s reload`), que
+> es lo que permitió medir el antes y el después en la misma sesión. La imagen
+> se reconstruyó después para que el cambio sobreviva a un reinicio, porque el
+> `Dockerfile` copia `nginx.conf` adentro de la imagen y un `docker compose up`
+> con la imagen vieja volvería al comportamiento anterior **sin avisar**.
+
+---
+
+## 7 · Lo que falta, con nombre y apellido
+
+### 7.1 · Una prueba desde otra red
+
+Todo lo de la sección 6 se midió **desde esta máquina pero por Internet**: el
+pedido sale hacia Cloudflare y vuelve por el túnel, y el `CF-RAY` con sufijo
+`EZE` prueba que pasó por el *datacenter* de Ezeiza. No es una prueba local.
+
+Igual falta la prueba desde **otra red**: el celular con datos móviles, no con
+el WiFi de la casa. Dos cosas que sólo esa prueba descarta:
+
+1. que el resolutor de DNS de esta red no esté metiendo mano (este proveedor
+   filtra dominios por DNS, cosa que ya pasó en este proyecto);
+2. que la IP que registra el historial sea la de **otro** visitante y no la
+   nuestra, que es la única forma de confirmar del todo el arreglo de la
+   sección 6.4.
+
+Es un minuto de trabajo y conviene hacerlo antes del día de la presentación,
+no el mismo día.
+
+### 7.2 · Bajar el túnel después de la entrega
+
+**Esto no es opcional.** Está en la sección 7.3 como decisión, y acá como
+tarea con fecha: el día después de la presentación,
+
+```bash
+cd infra/compose && docker compose --profile tunel down
+```
+
+La aplicación deja de ser alcanzable al instante y el túnel queda listo para
+volver a levantarlo. El motivo es el hallazgo **D-01**: 19 endpoints sin
+autenticación, entre ellos `DELETE /api/roles/:id`, hoy alcanzables desde
+Internet.
+
+### 7.3 · Cerrar D-01 antes de volver a publicar
+
+Mientras D-01 esté abierto, esta aplicación **no debería estar en Internet más
+que el rato de una demostración**. El arreglo está descrito en
+[`01-descripcion.md`](01-descripcion.md) §5 y anotado en
+[`16-limitaciones.md`](16-limitaciones.md) §8.
+
+### 7.4 · Lo que no se va a hacer, y por qué
 
 - **No se van a publicar Nextcloud ni Mantis**, aunque la consigna del punto 12
   hable de "centralizar la documentación". Hoy los dos van por HTTP, y
