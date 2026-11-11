@@ -24,6 +24,11 @@ repositorio. No son submódulos: se editan como carpetas normales.
 
 ## Cómo levantarlo hoy
 
+> **El manual de instalación completo está en [`INSTALACION.md`](INSTALACION.md)**:
+> requisitos, qué poner en el `.env`, cómo levantar los siete perfiles, cómo
+> preparar cada herramienta, cómo comprobar que quedó bien y qué hacer cuando
+> algo no arranca. Lo de acá abajo es el atajo.
+
 ```bash
 cd infra/compose
 cp .env.example .env     # completar las claves
@@ -38,18 +43,9 @@ touch ../prometheus/.token-alertas
 docker compose --profile app --profile monitoreo up -d --build
 ```
 
-> **El manual de instalación completo está en [`INSTALACION.md`](INSTALACION.md)**:
-> requisitos, qué poner en el `.env`, cómo levantar los siete perfiles, cómo
-> preparar cada herramienta, cómo comprobar que quedó bien y qué hacer cuando
-> algo no arranca. Lo de acá abajo es el atajo.
-
-> ⚠️ **El archivo `infra/prometheus/.token-alertas` hay que crearlo a mano
-> antes de levantar el perfil `monitoreo`.** Está en el `.gitignore` porque
-> lleva un secreto, así que en un clon nuevo no existe, y Docker —al montar un
-> archivo que no está— **crea una carpeta** con ese nombre y Alertmanager no
-> arranca. Es el mismo tropiezo que la incidencia **INC-17**: un supuesto sobre
-> el entorno que funcionaba en la maquina donde se escribio y no en un clon
-> limpio. Por eso esta escrito aca y no solo en la cabeza de alguien.
+> El `touch` de ahí arriba no es un detalle: es la incidencia **INC-17**, un
+> supuesto sobre el entorno que funcionaba en la máquina donde se escribió y no
+> en un clon limpio. Por eso está escrito acá y no sólo en la cabeza de alguien.
 
 | Dónde | Qué |
 |---|---|
