@@ -15,6 +15,15 @@ RUN npm ci --omit=dev
 
 FROM node:24-alpine AS runtime
 
+# Parches del sistema base. Fijar la etiqueta (node:24-alpine) da
+# reproducibilidad, pero NO da parches: la etiqueta se reconstruye cuando el
+# que la publica quiere, y mientras tanto arrastra las vulnerabilidades que
+# Alpine ya corrigio en su repositorio. El escaneo del 11/11 lo mostro:
+# 1 CRITICA y 56 ALTAS, ninguna del codigo de este proyecto y TODAS con
+# parche disponible (brotli 1.2.0-r0 -> 1.2.1-r0, c-ares, curl...).
+# Esta linea toma esos parches en cada construccion.
+RUN apk --no-cache upgrade
+
 # dumb-init como PID 1: Node no reenvia SIGTERM a sus hijos y sin esto el
 # contenedor tarda 10 segundos en morir en cada docker compose down.
 RUN apk add --no-cache dumb-init
