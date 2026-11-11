@@ -436,7 +436,12 @@ el adorno, y son dos minutos: no hay margen para que algo arranque en vivo.
 ### Media hora antes
 
 ```bash
-docker compose --profile app --profile monitoreo --profile procesos --profile tunel up -d
+docker compose \
+  --profile app --profile replica \
+  --profile monitoreo \
+  --profile incidencias --profile documental --profile automatizacion \
+  --profile tunel \
+  up -d
 ```
 
 Y después, en este orden:

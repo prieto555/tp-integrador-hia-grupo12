@@ -15,7 +15,7 @@ de documento, y algunos documentos se cubren dentro de otro.
 | 1 | Descripción de la aplicación | [`01-descripcion.md`](01-descripcion.md) | Hecho |
 | 2 | Arquitectura general | [`02-arquitectura.md`](02-arquitectura.md) | Hecho |
 | 3 | Inventario tecnológico | [`03-inventario.md`](03-inventario.md) | Hecho |
-| 4 | Manual de instalación | [`../README.md`](../README.md) + [`../COMO-CORRER.md`](../COMO-CORRER.md) | Hecho |
+| 4 | Manual de instalación | [`../INSTALACION.md`](../INSTALACION.md) | Hecho; de un clon limpio a los 23 contenedores, con la corrida del 11/11 al final |
 | 5 | Configuración Docker | [`05-docker.md`](05-docker.md) | Hecho |
 | 6 | Procedimiento de migración y carga de datos | [`06-carga-datos.md`](06-carga-datos.md) | Hecho |
 | 7 | Informe de optimización SQL | [`07-optimizacion-sql.md`](07-optimizacion-sql.md) | Hecho |
@@ -36,6 +36,7 @@ Además, fuera de la lista de los dieciséis:
 | [`13-documental.md`](13-documental.md) | Punto 12 — gestión documental con Nextcloud |
 | [`scrum/seguimiento.md`](scrum/seguimiento.md) | Punto 2 — **evidencias de seguimiento**: bitácora, impedimentos y cambios de alcance |
 | [`17-defensa.md`](17-defensa.md) | Punto 15 — la **otra mitad** del punto: guion de los 20 minutos, reparto de los cinco frentes y 43 preguntas con respuesta |
+| [`18-como-seguir.md`](18-como-seguir.md) | **No es un entregable**: los pasos que quedan, quién hace cada uno y en qué orden |
 | [`capturas/`](capturas/README.md) | Las diecinueve capturas de pantalla, con **qué prueba cada una** |
 
 ## Qué punto cubre cada archivo
