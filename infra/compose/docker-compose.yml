@@ -586,11 +586,19 @@ services:
       DB_POSTGRESDB_DATABASE: n8n
       DB_POSTGRESDB_USER: n8n
       DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD}
-      # La interfaz de administracion pide usuario y clave (requisito de
-      # seguridad del punto 13).
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?falta N8N_PASSWORD en el .env}
+      # OJO: aca habia tres variables N8N_BASIC_AUTH_* y un comentario que
+      # aseguraba que la interfaz pedia usuario y clave. Era falso: n8n quito
+      # la autenticacion basica en la version 1.0, asi que esas variables se
+      # leian y se ignoraban, y cualquiera que entrara a 127.0.0.1:5678 veia
+      # el formulario "Set up owner account" sin credencial ninguna.
+      # Es el hallazgo 15 de docs/09-seguridad.md. n8n es el servicio con mas
+      # credenciales adentro de todo el sistema y el unico conectado a las
+      # cuatro redes.
+      #
+      # La autenticacion real de n8n 1.x son las cuentas de usuario, y la de
+      # propietario ya esta dada de alta. Lo que lo contiene ademas es que el
+      # puerto se publica en 127.0.0.1 y NO esta en el ingress del tunel
+      # (ver docs/15-publicacion.md, seccion 3).
       # Clave con la que n8n cifra las credenciales guardadas. Si cambia, las
       # credenciales existentes dejan de poder descifrarse: por eso va al .env
       # y no se genera al vuelo en cada arranque.

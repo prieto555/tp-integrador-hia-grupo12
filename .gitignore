@@ -37,3 +37,10 @@ infra/incidencias/.token-api
 # Punto 13: secreto que comparten Alertmanager y el webhook de n8n,
 # generado por preparar-n8n.sh
 infra/prometheus/.token-alertas
+
+# Punto 9: lo que deja cloudflared al crear el tunel. El .json lleva el
+# secreto del tunel y el .yml lleva su id: ninguno de los dos va al
+# repositorio publico. Se regeneran con infra/tunel/preparar-tunel.sh.
+infra/tunel/.credenciales.json
+infra/tunel/config.generado.yml
+infra/tunel/*.json
