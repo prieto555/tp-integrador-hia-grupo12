@@ -3,12 +3,11 @@
 Entregable del punto 15.10. Cubre el **punto 9** de la consigna: dejar la
 aplicación accesible desde Internet durante la demostración final.
 
-> **Estado, antes que nada.** Toda la infraestructura está escrita, versionada
-> y revisada: el servicio `cloudflared` en el *compose* (perfil `tunel`), la
-> plantilla de configuración, y `infra/tunel/preparar-tunel.sh`, que crea el
-> túnel y el registro DNS. **Lo que falta es un dato: el nombre de la zona** —el
-> dominio que está en la cuenta de Cloudflare—, porque sin él no hay `CNAME`
-> que crear. La sección 7 dice exactamente qué queda por correr y por verificar.
+> **Estado, antes que nada.** El túnel está **creado y con su registro DNS dado
+> de alta**: la aplicación va a quedar en `https://restoya.liners-panel.com`.
+> Lo que falta es levantarlo y probarlo desde afuera, porque el motor de Docker
+> de la máquina está caído. La sección 6 tiene lo que ya se verificó, con la
+> salida de cada comando, y la sección 7 lo que queda.
 
 ---
 
@@ -209,10 +208,120 @@ levantarlo.
 
 ---
 
-## 6 · Lo que sí está verificado hoy
+## 6 · La corrida
 
-Sin dominio no se puede probar la publicación, pero sí se probó lo de este
-lado, que es la mitad que suele fallar:
+Se corrió el 10/11 sobre la zona `liners-panel.com`, que ya estaba autorizada
+en esta máquina —`~/.cloudflared/cert.pem` existía desde el 17/10 y tiene un
+`zoneID` adentro—, así que el paso 5.1 no hizo falta.
+
+### 6.1 · Lo que dejó el script
+
+```
+21:40:27 | tunel | Certificado de origen encontrado.
+21:40:28 | tunel | El tunel "restoya" ya existe (id 65415256-cd3f-43a3-ac55-b68b2fec356d).
+21:40:28 | tunel | Credenciales copiadas a infra/tunel/.credenciales.json (ignorado por Git).
+21:40:28 | tunel | config.generado.yml escrito para restoya.liners-panel.com.
+21:40:28 | tunel | Dando de alta el registro DNS de restoya.liners-panel.com.
+21:40:30 | tunel | DNS listo.
+
+21:40:30 | tunel | Preparado. El tunel NO esta levantado todavia.
+```
+
+Lo que se comprobó después, y es lo que importa de esa salida:
+
+**El otro túnel de la cuenta sigue intacto.** Es la razón por la que el script
+busca por nombre exacto en vez de asumir que hay uno solo:
+
+```
+ID                                   NAME    CREATED              CONNECTIONS
+b100b189-8d63-4e68-a927-47268cd2fd89 liners  2026-10-17T23:20:05Z 1xeze01, 2xeze02, 1xeze07
+65415256-cd3f-43a3-ac55-b68b2fec356d restoya 2026-11-11T00:39:26Z
+```
+
+`liners` conserva sus cuatro conexiones; `restoya` tiene cero porque todavía no
+se levantó.
+
+**El nombre resuelve a Cloudflare**, o sea que el `CNAME` quedó bien y además
+está *proxied*:
+
+```
+$ nslookup restoya.liners-panel.com 1.1.1.1
+Name:    restoya.liners-panel.com
+Addresses:  2606:4700:3034::ac43:8b38
+            2606:4700:3035::6815:4f02
+            104.21.79.2
+            172.67.139.56
+```
+
+Esas direcciones son de Cloudflare, no de esta casa. **La IP de la conexión
+doméstica no aparece en ningún lado**, que es otra cosa que el túnel da gratis
+y un reenvío de puertos no: con puerto abierto, el dominio apuntaría a la IP
+real y quedaría publicada.
+
+**La configuración generada quedó con el dominio real** y con la regla final:
+
+```yaml
+tunnel: restoya
+credentials-file: /etc/cloudflared/credenciales.json
+metrics: 0.0.0.0:2000
+retries: 5
+ingress:
+  - hostname: restoya.liners-panel.com
+    service: http://frontend:80
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: restoya.liners-panel.com
+  - service: http_status:404
+```
+
+### 6.2 · Lo que la corrida encontró: el script no andaba
+
+La primera corrida murió así:
+
+```
+21:39:24 | tunel | Certificado de origen encontrado.
+21:39:25 | tunel | Creando el tunel "restoya".
+No se pudo averiguar el id del tunel recien creado.
+```
+
+Creó el túnel y después **no pudo encontrarlo**, que es un síntoma raro: el
+script hace la misma consulta antes y después de crear.
+
+La causa está en una línea que parecía obvia. Para saltear los túneles
+borrados, el filtro era `!x.deleted_at`. Pero
+`cloudflared tunnel list --output json` **no pone `deleted_at` en `null` para
+un túnel vivo**: pone la fecha cero de Go.
+
+```json
+{"id":"...","name":"liners","deleted_at":"0001-01-01T00:00:00Z","connections":[...]}
+```
+
+Esa cadena, en JavaScript, es un valor **verdadero**. Así que `!x.deleted_at`
+daba `false` para **todos** los túneles, el `find` no devolvía ninguno, y el
+script concluía que no existía ninguno:
+
+- en la primera consulta eso era inofensivo —creaba el túnel, que era lo
+  correcto—;
+- en la segunda era fatal, porque ahí el id tenía que estar.
+
+Y hay una consecuencia peor que el error, que es la que hace que valga contarlo:
+**el script había dejado de ser idempotente sin avisar.** Si no hubiera salido
+con error en la segunda consulta, cada corrida habría creado un túnel nuevo
+llamado `restoya`, porque nunca encontraba el anterior.
+
+El arreglo compara contra la fecha cero en vez de contra `null`, y de paso
+unifica los dos bloques de código repetidos en una sola función
+`id_de_tunel()`. La segunda corrida dijo *"El tunel \"restoya\" ya existe"*,
+que es la prueba de que la idempotencia volvió.
+
+> Es exactamente el tipo de error que la sección 8 de
+> [`14-automatizacion.md`](14-automatizacion.md) describe para los flujos de
+> n8n: **un valor que existe pero no es el que se cree.** Ahí fueron las
+> etiquetas en inglés; acá, una fecha cero que se lee como "sí, está borrado".
+
+### 6.3 · Lo verificado antes de la corrida
+
+Esto ya estaba comprobado y sigue valiendo:
 
 | Qué | Cómo se comprobó |
 |---|---|
@@ -232,22 +341,32 @@ contraseña sino **fuera del camino**.
 
 ## 7 · Lo que falta, con nombre y apellido
 
-### 7.1 · El dato que bloquea todo
+### 7.1 · Levantarlo y probarlo desde afuera
 
-**El nombre de la zona de Cloudflare.** Con eso se corre `tunnel login`, se
-completa `DOMINIO_PUBLICO` y el procedimiento de la sección 5 se ejecuta
-entero. Son unos minutos.
+El túnel está preparado pero **no levantado**, y la aplicación tampoco está
+corriendo: el motor de Docker de la máquina está caído (el servicio
+`com.docker.service` y la distro WSL `docker-desktop` en `Stopped`). Es el
+mismo problema que ya apareció tres veces en este trabajo.
 
-Si la cuenta **no tiene** ningún dominio agregado, hay dos salidas y conviene
-decidirla antes de la semana de la presentación:
+Con Docker arriba son dos comandos:
 
-1. registrar un dominio barato (`.ar`, `.com.ar` o cualquiera de los que
-   Cloudflare vende) y agregarlo a la cuenta;
-2. usar el túnel rápido (`cloudflared tunnel --url http://localhost:8080`) y
-   aceptar que la dirección cambia en cada arranque, lo que significa leer la
-   URL nueva en voz alta el día de la demostración. Funciona, pero no es "una
-   aplicación publicada": es una demostración con una dirección temporal, y
-   conviene decirlo así y no al revés.
+```bash
+cd infra/compose && docker compose --profile app --profile tunel up -d
+```
+
+Y la prueba que de verdad cierra el punto 9: **entrar a
+`https://restoya.liners-panel.com` desde una red que no sea ésta** —el celular
+con datos móviles, no con el WiFi de la casa—. Desde la misma red el navegador
+podría estar resolviendo por otro camino y la prueba no probaría nada.
+
+Dos comprobaciones más, que son las que distinguen "anda" de "anda bien":
+
+1. que `https://restoya.liners-panel.com/api/productos` devuelva el menú (o
+   sea que el *proxy* de `/api/` funciona a través del túnel, no sólo el
+   frente);
+2. que `https://restoya.liners-panel.com/metrics` devuelva el `index.html` de
+   la SPA **y no las métricas**. Ya se comprobó por el camino de nginx; hay que
+   repetirlo por el camino del túnel, porque es el que queda expuesto.
 
 ### 7.2 · Una verificación que hay que hacer con el túnel arriba
 

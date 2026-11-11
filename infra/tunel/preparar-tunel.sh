@@ -62,25 +62,34 @@ registro "Certificado de origen encontrado."
 # OJO: NO se toca ningun otro tunel de la cuenta. Si hay uno andando para otra
 # cosa, sigue andando: este script solo mira si existe uno con ESTE nombre.
 # -----------------------------------------------------------------------------
-ID=$(cloudflared tunnel list --output json 2>/dev/null \
-     | node -e 'let b="";process.stdin.on("data",d=>b+=d).on("end",()=>{
-         let t=[];try{t=JSON.parse(b)}catch{};
-         const n=process.argv[1];
-         const m=(t||[]).find(x=>x.name===n && !x.deleted_at);
-         process.stdout.write(m?m.id:"");
-       })' "$TUNEL" || true)
+# OJO con el filtro de borrados, que costo una corrida fallada:
+# "cloudflared tunnel list --output json" NO pone deleted_at en null para un
+# tunel vivo. Pone la fecha cero de Go:
+#
+#     "deleted_at": "0001-01-01T00:00:00Z"
+#
+# Eso, como cadena, es un valor VERDADERO en JavaScript. Con un `!x.deleted_at`
+# ningun tunel pasaba el filtro: el script no encontraba el que acababa de
+# crear y moria con "No se pudo averiguar el id". Hay que comparar contra la
+# fecha cero, no contra null.
+id_de_tunel() {
+    cloudflared tunnel list --output json 2>/dev/null \
+    | node -e 'let b="";process.stdin.on("data",d=>b+=d).on("end",()=>{
+        let t=[];try{t=JSON.parse(b)}catch{};
+        const vivo = x => !x.deleted_at || x.deleted_at.startsWith("0001-01-01");
+        const m=(t||[]).find(x=>x.name===process.argv[1] && vivo(x));
+        process.stdout.write(m?m.id:"");
+      })' "$1"
+}
+
+ID=$(id_de_tunel "$TUNEL" || true)
 
 if [ -n "$ID" ]; then
     registro "El tunel \"$TUNEL\" ya existe (id $ID)."
 else
     registro "Creando el tunel \"$TUNEL\"."
     cloudflared tunnel create "$TUNEL" > /dev/null
-    ID=$(cloudflared tunnel list --output json 2>/dev/null \
-         | node -e 'let b="";process.stdin.on("data",d=>b+=d).on("end",()=>{
-             let t=[];try{t=JSON.parse(b)}catch{};
-             const m=(t||[]).find(x=>x.name===process.argv[1] && !x.deleted_at);
-             process.stdout.write(m?m.id:"");
-           })' "$TUNEL")
+    ID=$(id_de_tunel "$TUNEL")
     [ -n "$ID" ] || { echo "No se pudo averiguar el id del tunel recien creado." >&2; exit 1; }
     registro "Creado: id $ID."
 fi
