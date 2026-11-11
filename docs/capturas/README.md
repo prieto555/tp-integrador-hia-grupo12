@@ -1,6 +1,6 @@
 # Capturas de pantalla
 
-Catorce capturas tomadas el **10/11/2026**, con el sistema corriendo y la
+Diecisiete capturas tomadas el **10 y 11/11/2026**, con el sistema corriendo y la
 aplicación publicada. Esta tabla dice **qué prueba cada una**, porque una
 captura sin esa frase al lado no prueba nada: es una foto de una pantalla.
 
@@ -53,19 +53,18 @@ captura sin esa frase al lado no prueba nada: es una foto de una pantalla.
 
 | Archivo | Qué prueba |
 |---|---|
-| [`50-n8n-sin-autenticacion.png`](50-n8n-sin-autenticacion.png) | **Ésta no prueba que algo funcione: prueba un problema.** n8n contesta con "Set up owner account" a quien entre, sin pedir ninguna credencial. Es el hallazgo 15 de [`09-seguridad.md`](../09-seguridad.md). Abajo a la derecha se ve además el propio aviso de n8n: *"Critical update available"* |
+| [`50-n8n-sin-autenticacion.png`](50-n8n-sin-autenticacion.png) | **Ésta no prueba que algo funcione: prueba un problema.** n8n contestaba con "Set up owner account" a quien entrara, sin pedir ninguna credencial. Es el hallazgo 15 de [`09-seguridad.md`](../09-seguridad.md). Abajo a la derecha se ve además el propio aviso de n8n: *"Critical update available"*. **Se deja a propósito**: es el antes, y la ventana ya se cerró |
+| [`51-n8n-flujos.png`](51-n8n-flujos.png) | Los **tres flujos, los tres en `Active`**: F01 de alerta a incidencia, F02 de verificación de copias, F03 de informe a Nextcloud |
+| [`52-n8n-ejecuciones.png`](52-n8n-ejecuciones.png) | **La mejor captura del punto 13, y no porque salga todo bien.** Veintiún ejecuciones con su duración, y entre ellas los **tres errores de F03** (#13, #14, #15) antes de que quedara andando. Es el historial real de la depuración que cuenta [`14-automatizacion.md`](../14-automatizacion.md) §8, no una corrida prolija armada para la foto |
+| [`53-n8n-flujo-f01.png`](53-n8n-flujo-f01.png) | El lienzo de F01 completo: el *webhook*, la validación, el filtro de críticas, la búsqueda de duplicados, la apertura en Mantis, el aviso al equipo y la respuesta a Alertmanager — con la nota del propio flujo explicando **qué NO hace a propósito** |
 
 ---
 
 ## Lo que falta capturar, y por qué
 
-**Los tres flujos de n8n.** No se pueden capturar sin crear una cuenta de
-propietario en n8n, y esa cuenta no se creó a propósito: crear cuentas no es
-algo que deba hacerse sin que lo pida quien es dueño del sistema. En cuanto
-exista la cuenta, son tres capturas de un minuto. Mientras tanto, la evidencia
-de que los flujos están cargados y andan está en
-[`14-automatizacion.md`](../14-automatizacion.md) §8, con las ejecuciones
-leídas de la propia base de n8n.
+**Ya no falta n8n.** El 11/11, a pedido del dueño del sistema, se reclamó la
+cuenta de propietario con la `N8N_PASSWORD` que ya estaba en el `.env` —no se
+inventó ninguna credencial— y salieron las tres capturas que faltaban.
 
 **pgAdmin.** Su formulario de inicio de sesión se dibuja por JavaScript y
 rechazó el envío automático con "The CSRF token is missing". Se puede sacar a

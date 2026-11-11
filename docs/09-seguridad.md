@@ -28,7 +28,7 @@ es el código, no una corrida.
 | 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
 | 13 | Las cabeceras de seguridad de nginx no llegaban a ninguna respuesta de HTML | Media | **Corregido** |
 | 14 | Al publicar, el límite de login pasó a ser un interruptor global | Alta | **Corregido** |
-| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Documentado, no corregido** |
+| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Cerrada la ventana; la causa sigue** |
 | 16 | La imagen de n8n está marcada como crítica por el propio n8n | Media | **Documentado, no corregido** |
 
 ---
@@ -492,15 +492,31 @@ que hay en este sistema para moverse hacia los demás.
 [`15-publicacion.md`](15-publicacion.md) §3). Desde Internet no se llega. Desde
 esta máquina, sí, y sin credencial.
 
-**No corregido**, y la cuenta de propietario **no se creó a propósito**: crear
-una cuenta es una decisión de quien administra el sistema, no de quien está
-sacando capturas. El arreglo, en orden de lo que más sirve:
+**La ventana se cerró el 11/11**, a pedido del dueño del sistema: se reclamó la
+cuenta de propietario con la `N8N_PASSWORD` que **ya estaba en el `.env`** —la
+que se había puesto para la autenticación básica que no existe— y el correo
+`admin@restoya.com.ar`, el mismo dominio que usa pgAdmin. No se inventó ninguna
+credencial nueva. Comprobado después: `showSetupOnFirstLoad` pasó a `false`, o
+sea que n8n ya no le ofrece el sistema al primero que entre.
 
-1. crear la cuenta de propietario (eso sólo cierra la ventana: después hay
-   login de verdad);
-2. **sacar el comentario mentiroso del `compose`** y las tres variables que no
-   hacen nada, que es lo que hizo creer que esto estaba resuelto;
+> Vale aclarar por qué no se hizo antes: hasta que el dueño lo pidió, crear una
+> cuenta era una decisión suya, no de quien estaba sacando capturas. Que la
+> ventana estuviera abierta no la convertía en una invitación.
+
+**Pero la causa sigue en pie, y es lo que importa:**
+
+1. el `compose` **sigue diciendo que pide usuario y clave**, con tres variables
+   que no hacen nada. Mientras ese comentario esté, el próximo que levante el
+   proyecto en una máquina limpia va a creer que está protegido, y va a volver
+   a quedar con la ventana abierta hasta que alguien reclame la cuenta;
+2. el arreglo de verdad es **borrar las tres variables y el comentario**, y
+   dejar escrito que la protección de n8n es que el puerto está en
+   `127.0.0.1` y fuera del *ingress*;
 3. si alguna vez hiciera falta publicarlo, poner algo delante que autentique.
+
+No se tocó el `compose` acá a propósito: ese archivo es de otra rama (la del
+túnel y la de procesos), y mezclar un cambio de infraestructura en el PR de
+documentación es cómo se pierde la trazabilidad de qué rompió qué.
 
 ### 16 · La imagen de n8n está marcada como crítica por el propio n8n
 

@@ -78,7 +78,7 @@ Del informe [`09-seguridad.md`](09-seguridad.md):
 | **No hay doble factor ni revocación de sesiones.** Un JWT robado sirve hasta que vence | Es el agujero más grande de los que sí tienen autenticación |
 | **Dos mecanismos de autorización conviviendo**: `verificarRol` compara el nombre del rol, `verificarPermiso` consulta `roles_funciones`. Sólo `usuario.route.js` usa el segundo | Un rol nuevo con los permisos correctos no entra a ninguna ruta que use el primero (hallazgo D-04) |
 | **El limitador de peticiones guarda el estado en memoria.** Se reinicia con el proceso y se multiplica por cada réplica del backend | Un reinicio borra el conteo de intentos de login |
-| **n8n no pide ninguna credencial.** `N8N_BASIC_AUTH_*` no existe en n8n 1.x, así que quien llegue al puerto se declara propietario y se lleva los accesos a Mantis, Nextcloud y el SMTP. Sólo lo contiene que el puerto esté en `127.0.0.1` y fuera del túnel | Es el servicio con más credenciales adentro y el único en las cuatro redes (hallazgos 15 y 16) |
+| **El `compose` sigue diciendo que n8n pide usuario y clave, y es mentira.** `N8N_BASIC_AUTH_*` no existe en n8n 1.x. La cuenta de propietario ya se reclamó, así que hoy hay login; pero en una máquina limpia el proyecto vuelve a levantar con la ventana abierta y el comentario asegurando lo contrario | Hasta que se borren esas tres variables y ese comentario, el problema vuelve solo (hallazgos 15 y 16) |
 | **Las imágenes no están firmadas.** Nada impide que alguien publique una imagen con el mismo nombre | Cadena de suministro |
 | **Dos vulnerabilidades sin parche publicado**: `brotli` en Alpine y la biblioteca estándar de Go en la imagen de `postgres` | No se pueden arreglar; hay que revisarlas cada tanto |
 | **Nextcloud y Mantis van por HTTP** | Aceptable mientras sólo escuchen en `127.0.0.1`. **En cuanto se publique el túnel del punto 9, tienen que ir por HTTPS**: hoy las contraseñas viajan en claro |
@@ -165,7 +165,7 @@ confundirlos.
 | Los tres flujos de n8n ejecutados | **Corridos**, y arreglados: los tres estaban mal escritos ([`14-automatizacion.md`](14-automatizacion.md)) |
 | Capturas del tablero de Grafana | **Hechas**, los 22 paneles con datos ([`capturas/`](capturas/README.md)) |
 | Capturas de Mantis y Nextcloud | **Hechas**: las 17 incidencias, el detalle de una, el resumen, y la estructura documental |
-| Capturas de los tres flujos de n8n | **Faltan**, y hace falta crear primero la cuenta de propietario de n8n (hallazgo 15) |
+| Capturas de los tres flujos de n8n | **Hechas** el 11/11, después de reclamar la cuenta de propietario: los tres flujos activos, las 21 ejecuciones (con los tres errores de F03) y el lienzo de F01 |
 | Captura de pgAdmin | **Falta.** Su formulario rechazó el envío automático con «The CSRF token is missing». No es evidencia de ningún punto |
 | `curl` sin token contra los 19 endpoints abiertos (D-01) | **Falta.** La evidencia de hoy es el código; la comprobación en vivo quedó pendiente porque el motor de Docker no estaba levantado cuando se escribió [`01-descripcion.md`](01-descripcion.md) |
 
