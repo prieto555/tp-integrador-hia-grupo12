@@ -89,7 +89,13 @@ jobs:
       # que la imagen con la vulnerabilidad ya esta disponible para que
       # alguien la baje.
       - name: Escanear con Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        # OJO con la etiqueta: las versiones de esta accion se publican con
+        # prefijo "v" (v0.36.0). Estaba fijada en "0.28.0", SIN prefijo, que no
+        # existe, y GitHub falla con "unable to find version" antes de correr
+        # un solo paso. No se habia notado porque este trabajo nunca habia
+        # llegado a ejecutarse: el CI de develop estaba en rojo y la condicion
+        # workflow_run.conclusion == 'success' lo saltaba siempre.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.nombre.outputs.imagen }}:prueba
           format: table
