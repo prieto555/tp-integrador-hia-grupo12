@@ -34,6 +34,7 @@ Además, fuera de la lista de los dieciséis:
 | Documento | Para qué |
 |---|---|
 | [`13-documental.md`](13-documental.md) | Punto 12 — gestión documental con Nextcloud |
+| [`capturas/`](capturas/README.md) | Las catorce capturas de pantalla, con **qué prueba cada una** |
 
 ## Qué punto cubre cada archivo
 

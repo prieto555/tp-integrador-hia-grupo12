@@ -28,6 +28,8 @@ es el código, no una corrida.
 | 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
 | 13 | Las cabeceras de seguridad de nginx no llegaban a ninguna respuesta de HTML | Media | **Corregido** |
 | 14 | Al publicar, el límite de login pasó a ser un interruptor global | Alta | **Corregido** |
+| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Documentado, no corregido** |
+| 16 | La imagen de n8n está marcada como crítica por el propio n8n | Media | **Documentado, no corregido** |
 
 ---
 
@@ -436,6 +438,85 @@ Verificación, las tres filas reales de `historial_accesos`:
      6000009 | 181.177.197.253 | por el tunel, despues
      6000010 | 172.24.0.1      | local, despues (no se rompio)
 ```
+
+---
+
+## 15 y 16 · n8n: la autenticación que no existe y la versión que el propio n8n marca como crítica
+
+Los dos aparecieron sacando las capturas de pantalla para la entrega, que es
+una forma rara de encontrar un agujero de seguridad y vale contarla: hubo que
+entrar a cada herramienta para fotografiarla, y n8n **no pidió nada**.
+
+### 15 · `N8N_BASIC_AUTH_*` no hace nada en n8n 1.x
+
+El `docker-compose.yml` dice:
+
+```yaml
+      # La interfaz de administracion pide usuario y clave (requisito de
+      # seguridad del punto 13).
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?falta N8N_PASSWORD en el .env}
+```
+
+**Ese comentario es falso.** n8n quitó la autenticación básica en la versión
+1.0; la imagen que corre acá es la **1.70.1**, así que esas tres variables se
+leen y se ignoran. La interfaz usa "cuentas de usuario", y mientras no exista
+una cuenta de propietario, n8n le ofrece crearla **a cualquiera que entre**.
+
+Medido:
+
+```
+$ curl -sI http://127.0.0.1:5678/
+HTTP/1.1 200 OK
+                       <- no hay WWW-Authenticate: no pide nada
+
+$ curl -s http://127.0.0.1:5678/rest/settings
+  userManagement.showSetupOnFirstLoad: true
+  versionCli: 1.70.1
+```
+
+Y la captura [`capturas/50-n8n-sin-autenticacion.png`](capturas/50-n8n-sin-autenticacion.png)
+muestra el formulario **"Set up owner account"** servido sin credenciales.
+
+**Por qué importa más de lo que parece.** n8n es el servicio con más
+credenciales adentro de todo el sistema: tiene el *token* de la API de Mantis,
+la cuenta de robot de Nextcloud, el secreto del webhook de alertas y el SMTP.
+Quien se declare propietario se lleva las cuatro. Es, además, el único
+contenedor conectado a las cuatro redes de Docker (ver
+[`02-arquitectura.md`](02-arquitectura.md) §3), o sea el mejor punto de partida
+que hay en este sistema para moverse hacia los demás.
+
+**Lo que lo contiene hoy, y es lo único:** el puerto 5678 está publicado en
+`127.0.0.1` y **no está en el *ingress* del túnel** (ver
+[`15-publicacion.md`](15-publicacion.md) §3). Desde Internet no se llega. Desde
+esta máquina, sí, y sin credencial.
+
+**No corregido**, y la cuenta de propietario **no se creó a propósito**: crear
+una cuenta es una decisión de quien administra el sistema, no de quien está
+sacando capturas. El arreglo, en orden de lo que más sirve:
+
+1. crear la cuenta de propietario (eso sólo cierra la ventana: después hay
+   login de verdad);
+2. **sacar el comentario mentiroso del `compose`** y las tres variables que no
+   hacen nada, que es lo que hizo creer que esto estaba resuelto;
+3. si alguna vez hiciera falta publicarlo, poner algo delante que autentique.
+
+### 16 · La imagen de n8n está marcada como crítica por el propio n8n
+
+En la misma captura, abajo a la derecha, el aviso lo da n8n solo:
+
+> *Critical update available — Please update to version 1.121.0 or higher.*
+
+La imagen está fijada en `n8nio/n8n:1.70.1`. Fijar la versión es correcto y es
+lo que este trabajo defiende en [`03-inventario.md`](03-inventario.md) §4; lo
+que falta es la otra mitad: **algo que avise cuando la versión fijada queda
+vieja**. Es exactamente la mejora que ese documento propone (Renovate o
+Dependabot) y que no está hecha.
+
+El escaneo de Trivy del punto 14 no lo atrapó porque sólo mira las imágenes del
+backend y del frontend, que son las que el *pipeline* construye. Las imágenes
+de terceros del *compose* no se escanean. Eso también queda anotado.
 
 ---
 
