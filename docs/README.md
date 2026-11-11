@@ -1,6 +1,6 @@
 # Documentación técnica
 
-El punto 15 de la consigna pide **dieciséis documentos**. Acá están, y esta
+El punto 15 de la consigna pide **dieciséis documentos**. Los dieciséis están escritos, y esta
 tabla dice **dónde está cada uno**, porque no hay una correspondencia de uno a
 uno: los archivos están numerados por **punto de la consigna**, no por número
 de documento, y algunos documentos se cubren dentro de otro.
@@ -21,7 +21,7 @@ de documento, y algunos documentos se cubren dentro de otro.
 | 7 | Informe de optimización SQL | [`07-optimizacion-sql.md`](07-optimizacion-sql.md) | Hecho |
 | 8 | Configuración y pruebas de replicación | [`10-cluster.md`](10-cluster.md) | Hecho, con la prueba de caída corrida y medida |
 | 9 | Configuración CI/CD | [`11-cicd.md`](11-cicd.md) | Hecho |
-| 10 | Procedimiento de publicación en Internet | `15-publicacion.md` | **Falta** (punto 9: todo construido; falta el nombre de la zona de Cloudflare) |
+| 10 | Procedimiento de publicación en Internet | [`15-publicacion.md`](15-publicacion.md) | Hecho; la aplicación está publicada y probada por Internet |
 | 11 | Manual de monitoreo | [`08-monitoreo.md`](08-monitoreo.md) | Hecho |
 | 12 | Gestión de incidencias | [`12-incidencias.md`](12-incidencias.md) | Hecho; 17 incidencias cargadas y verificadas por API. Faltan capturas |
 | 13 | Flujos de n8n | [`14-automatizacion.md`](14-automatizacion.md) | Hecho; los tres flujos corridos, y arreglados. Faltan capturas |

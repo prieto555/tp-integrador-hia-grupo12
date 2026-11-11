@@ -26,6 +26,8 @@ es el código, no una corrida.
 | 10 | `@scarf/scarf` llama a su servidor al instalarse | Baja | Documentado, sin acción |
 | 11 | El limitador guarda las cuentas en memoria | Media | Documentado, no corregido |
 | 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
+| 13 | Las cabeceras de seguridad de nginx no llegaban a ninguna respuesta de HTML | Media | **Corregido** |
+| 14 | Al publicar, el límite de login pasó a ser un interruptor global | Alta | **Corregido** |
 
 ---
 
@@ -350,6 +352,90 @@ Vale aclarar qué lo contiene hoy y qué no:
 **no está comprobado contra el stack corriendo**: el `curl` sin token quedó sin
 correr porque el motor de Docker no estaba levantado. La evidencia de hoy es el
 código, en los archivos y líneas de la tabla.
+
+---
+
+## 13 y 14 · Los dos que aparecieron al publicar
+
+Éstos no se encontraron auditando. Se encontraron **publicando la aplicación**,
+y los dos son del mismo tipo: un control que este informe dio por cerrado y
+verificado, y lo estaba — en local. Lo rompió el túnel.
+
+La medición completa, con la salida de cada comando, está en
+[`15-publicacion.md`](15-publicacion.md) §6.4. Acá va lo que importa para un
+informe de seguridad.
+
+### 13 · Las tres cabeceras de nginx no llegaban a ninguna respuesta de HTML
+
+`X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy` estaban
+declaradas a nivel del servidor en `frontend/nginx.conf`, **con `always`**, y
+no aparecían en `/`, ni en los `.js`, ni en una ruta inexistente. Se descartó
+que las sacara Cloudflare pidiéndolas directo a nginx en `127.0.0.1`: tampoco
+estaban.
+
+En nginx, **si un bloque `location` tiene un `add_header` propio, no hereda
+ninguno de los del padre**. Los dos bloques que ponían un `Cache-Control` se
+comían las tres cabeceras enteras, y como `location /` hace `try_files` hacia
+`/index.html`, hasta la página principal caía en uno de ellos.
+
+El efecto neto era el contrario del buscado: a `/api/` —que ya las tenía por
+Helmet— llegaban **duplicadas**, con dos `Referrer-Policy` de valor distinto, y
+a los archivos estáticos, que son la única razón por la que esas líneas
+existen, no llegaba ninguna. La que más se extraña es `X-Frame-Options` en el
+documento HTML, que es la que frena el *clickjacking*.
+
+**Corregido**: declaradas en cada bloque que sirve contenido y sacadas del
+nivel del servidor. Verificado por el túnel y en local.
+
+### 14 · El límite de intentos de login pasó a ser un interruptor global
+
+Éste es grave y es consecuencia directa de publicar.
+
+Un `POST /api/pedidos` hecho por el túnel desde la IP pública
+`181.177.197.253` quedó registrado en `historial_accesos` como `172.24.0.17`,
+que es el contenedor de `cloudflared`.
+
+**`cloudflared` no manda `X-Forwarded-For`: manda `CF-Connecting-IP`.** Así que
+el `$proxy_add_x_forwarded_for` de nginx no tenía ninguna cadena que ampliar y
+quedaba con un solo elemento, la IP del propio `cloudflared`. Express, con
+`trust proxy = 1`, descarta ese único salto y cae en la IP del *socket*.
+
+Lo que eso significa, y es lo que hay que poder decir en la defensa:
+
+> El limitador cuenta **por IP**. Con todas las peticiones de Internet llegando
+> con la misma IP, **diez intentos fallidos de cualquiera dejan afuera a todo
+> el mundo durante quince minutos.**
+
+El hallazgo 3 de este informe bajó ese límite de 100 a 10 para frenar la fuerza
+bruta. Al publicar, ese mismo control se convierte en una forma de **apagar el
+inicio de sesión del sistema desde afuera, sin autenticarse y gratis**. Y el
+historial de accesos deja de servir para investigar nada: todas las filas con
+la misma IP.
+
+Dicho de otro modo: **un control bien configurado puede volverse un ataque de
+denegación de servicio cuando cambia la topología de la red debajo.** Es el
+hallazgo que mejor justifica por qué la consigna pide probar y no afirmar.
+
+**Corregido** con un `map` en nginx que toma `CF-Connecting-IP` cuando viene y
+la cadena normal cuando no, así el acceso local sin túnel sigue funcionando
+igual. **No se tocó `trust proxy = 1`**: sigue habiendo un salto de confianza,
+nginx, y ahora lo que nginx le pasa es la IP correcta.
+
+Queda una condición escrita en el propio archivo: confiar en `CF-Connecting-IP`
+es seguro **sólo porque a ese nginx no se llega de otra forma** —el puerto 80
+no está publicado en la LAN, únicamente en `127.0.0.1` y por el túnel—. Si
+algún día se publica el puerto, la cabecera pasa a ser falsificable y hay que
+reemplazar el `map` por una lista de IP de confianza de Cloudflare.
+
+Verificación, las tres filas reales de `historial_accesos`:
+
+```
+ idHistorial |       ip        | metodo
+-------------+-----------------+--------------------------------
+     6000008 | 172.24.0.17     | por el tunel, ANTES del arreglo
+     6000009 | 181.177.197.253 | por el tunel, despues
+     6000010 | 172.24.0.1      | local, despues (no se rompio)
+```
 
 ---
 

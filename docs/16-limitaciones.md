@@ -39,25 +39,32 @@ procedimiento, no un control.
 **Mejora**: Patroni + etcd + HAProxy. El grupo ya lo hizo en el TP de Clúster
 de esta misma materia, con *failover* medido en 5 segundos.
 
-### 1.3 La aplicación no está publicada en Internet (punto 9)
+### 1.3 La aplicación está publicada, y eso cambia el riesgo (punto 9)
 
-Todo lo necesario está construido y verificado localmente: el servicio
-`cloudflared` en el *compose* (perfil `tunel`), la plantilla versionada de
-configuración con el cuadro de qué **no** se publica, y
-`infra/tunel/preparar-tunel.sh`, que crea el túnel y el registro DNS sin tocar
-ningún otro túnel de la cuenta.
+La aplicación está en **https://restoya.liners-panel.com**, por un túnel de
+Cloudflare. Lo único publicado es nginx; las nueve herramientas internas no
+están en el *ingress* (ver [`15-publicacion.md`](15-publicacion.md) §3).
 
-**Lo único que falta es el nombre de la zona** —el dominio registrado en
-Cloudflare—, porque sin él no hay `CNAME` que crear. La cuenta de Cloudflare
-existe. La consigna pide que la aplicación esté accesible **durante la
-demostración final**, así que esto es lo más urgente de la lista por fecha,
-aunque no por riesgo.
+**Publicar destapó dos problemas que en local no se veían**, los dos
+corregidos y medidos: las tres cabeceras de seguridad de nginx no llegaban a
+ninguna respuesta de HTML, y el backend veía la IP del contenedor de
+`cloudflared` en vez de la del visitante, lo que convertía el límite de
+intentos de inicio de sesión en un interruptor para dejar afuera a todo el
+mundo. Son los hallazgos 13 y 14 de [`09-seguridad.md`](09-seguridad.md).
 
-Queda además una verificación pendiente para cuando el túnel esté arriba:
-**qué IP ve el backend**. `app.set('trust proxy', 1)` confía en exactamente un
-salto (nginx), y Cloudflare agrega los suyos. Si el backend termina viendo
-siempre la misma IP, el límite de intentos de inicio de sesión deja de
-distinguir clientes y pasa a ser un límite global.
+**Y lo que sigue siendo una limitación, que es la importante:** mientras
+**D-01** esté abierto —19 endpoints sin autenticación, entre ellos
+`DELETE /api/roles/:id`—, esos endpoints son alcanzables **desde
+Internet**. El túnel tiene que bajarse después de la presentación:
+
+```bash
+cd infra/compose && docker compose --profile tunel down
+```
+
+Falta además la prueba desde **otra red** (el celular con datos móviles). Todo
+lo medido salió de esta máquina pero por Internet —el `CF-RAY` con sufijo
+`EZE` lo prueba—, así que no es una prueba local; pero sólo otra red
+descarta del todo que el resolutor de DNS de este proveedor esté metiendo mano.
 
 ---
 
