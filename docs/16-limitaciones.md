@@ -166,7 +166,7 @@ confundirlos.
 | Capturas del tablero de Grafana | **Hechas**, los 22 paneles con datos ([`capturas/`](capturas/README.md)) |
 | Capturas de Mantis y Nextcloud | **Hechas**: las 17 incidencias, el detalle de una, el resumen, y la estructura documental |
 | Capturas de los tres flujos de n8n | **Hechas** el 11/11, después de reclamar la cuenta de propietario: los tres flujos activos, las 21 ejecuciones (con los tres errores de F03) y el lienzo de F01 |
-| Captura de pgAdmin | **Falta.** Su formulario rechazó el envío automático con «The CSRF token is missing». No es evidencia de ningún punto |
+| Captura de pgAdmin | **Hecha** el 11/11, y son dos: el cliente conectado con `restoyadb` desplegada hasta `Tables (12)` —el entregable del punto 4—, y la de que **entra sin pedir ninguna credencial**, que resultó ser el hallazgo 17 |
 | `curl` sin token contra los 19 endpoints abiertos (D-01) | **Falta.** La evidencia de hoy es el código; la comprobación en vivo quedó pendiente porque el motor de Docker no estaba levantado cuando se escribió [`01-descripcion.md`](01-descripcion.md) |
 
 **Lo que quedó pendiente es de dos clases**, y hay que distinguirlas en la

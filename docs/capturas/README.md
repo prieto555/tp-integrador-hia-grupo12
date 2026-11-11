@@ -1,6 +1,6 @@
 # Capturas de pantalla
 
-Diecisiete capturas tomadas el **10 y 11/11/2026**, con el sistema corriendo y la
+Diecinueve capturas tomadas el **10 y 11/11/2026**, con el sistema corriendo y la
 aplicación publicada. Esta tabla dice **qué prueba cada una**, porque una
 captura sin esa frase al lado no prueba nada: es una foto de una pantalla.
 
@@ -18,6 +18,13 @@ captura sin esa frase al lado no prueba nada: es una foto de una pantalla.
 | [`00-publicada-barra-de-direcciones.png`](00-publicada-barra-de-direcciones.png) | **La más importante del conjunto.** La barra de direcciones dice `restoya.liners-panel.com/home`: la aplicación está en Internet con un nombre propio, no en `localhost` |
 | [`01-app-publicada.png`](01-app-publicada.png) | La portada servida a través del túnel |
 | [`02-app-publicada-platos.png`](02-app-publicada-platos.png) | `/platos`: el ruteo de Angular funciona a través del túnel, y los productos vienen de la API, o sea que el *proxy* de `/api/` también |
+
+## Punto 4 — cliente de administración de la base
+
+| Archivo | Qué prueba |
+|---|---|
+| [`60-pgadmin-sin-credenciales.png`](60-pgadmin-sin-credenciales.png) | **Ésta no prueba que algo funcione: prueba un problema.** Es pgAdmin recién abierto, **sin haber escrito una sola credencial**. `GET /` devuelve 302 a `/browser/` y de ahí 200: no hay pantalla de inicio de sesión. Es el hallazgo 17 de [`09-seguridad.md`](../09-seguridad.md) |
+| [`61-pgadmin-conectado.png`](61-pgadmin-conectado.png) | El entregable del punto 4: **el cliente de administración funcionando**. El servidor `RestoYa (contenedor)` conectado, `restoyadb` desplegada hasta **`Tables (12)`** —las doce tablas que describe [`01-descripcion.md`](../01-descripcion.md)—, el nodo `Replica Nodes` del punto 6, y el panel con las sesiones, las transacciones por segundo y el *block I/O* en vivo. **Tampoco acá hubo que escribir la clave de la base**: pgAdmin la tiene guardada en su volumen |
 
 ## Punto 10 — monitoreo
 
@@ -60,16 +67,20 @@ captura sin esa frase al lado no prueba nada: es una foto de una pantalla.
 
 ---
 
-## Lo que falta capturar, y por qué
+## No falta ninguna
 
-**Ya no falta n8n.** El 11/11, a pedido del dueño del sistema, se reclamó la
-cuenta de propietario con la `N8N_PASSWORD` que ya estaba en el `.env` —no se
-inventó ninguna credencial— y salieron las tres capturas que faltaban.
+**n8n.** El 11/11, a pedido del dueño del sistema, se reclamó la cuenta de
+propietario con la `N8N_PASSWORD` que ya estaba en el `.env` —no se inventó
+ninguna credencial— y salieron las tres capturas que faltaban.
 
-**pgAdmin.** Su formulario de inicio de sesión se dibuja por JavaScript y
-rechazó el envío automático con "The CSRF token is missing". Se puede sacar a
-mano en treinta segundos. No es evidencia de ningún punto: pgAdmin es una
-consola, no un entregable.
+**pgAdmin.** Quedó para el final por un diagnóstico equivocado: el primer
+intento falló con *"The CSRF token is missing"* y se anotó que **el formulario
+de inicio de sesión** rechazaba el envío automático. Era falso por partida
+doble. Ese error venía de pegarle a la API sin el testigo CSRF, que es
+protección contra CSRF y **no es autenticación**; y sobre todo **no hay
+formulario de inicio de sesión**, porque pgAdmin corre en modo escritorio. O
+sea que lo que se había anotado como "no se pudo entrar" era en realidad "se
+entra sin nada". De ahí salió el hallazgo 17.
 
 ---
 

@@ -35,8 +35,8 @@ Además, fuera de la lista de los dieciséis:
 |---|---|
 | [`13-documental.md`](13-documental.md) | Punto 12 — gestión documental con Nextcloud |
 | [`scrum/seguimiento.md`](scrum/seguimiento.md) | Punto 2 — **evidencias de seguimiento**: bitácora, impedimentos y cambios de alcance |
-| [`17-defensa.md`](17-defensa.md) | Punto 15 — la **otra mitad** del punto: guion de los 20 minutos, reparto de los cinco frentes y 42 preguntas con respuesta |
-| [`capturas/`](capturas/README.md) | Las diecisiete capturas de pantalla, con **qué prueba cada una** |
+| [`17-defensa.md`](17-defensa.md) | Punto 15 — la **otra mitad** del punto: guion de los 20 minutos, reparto de los cinco frentes y 43 preguntas con respuesta |
+| [`capturas/`](capturas/README.md) | Las diecinueve capturas de pantalla, con **qué prueba cada una** |
 
 ## Qué punto cubre cada archivo
 
