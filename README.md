@@ -29,6 +29,9 @@ repositorio. No son submódulos: se editan como carpetas normales.
 > preparar cada herramienta, cómo comprobar que quedó bien y qué hacer cuando
 > algo no arranca. Lo de acá abajo es el atajo.
 
+> Y para **comprobar punto por punto que cada cosa funciona** —con el comando
+> y qué tenés que ver en cada caso— está [`PROBAR.md`](PROBAR.md).
+
 ```bash
 cd infra/compose
 cp .env.example .env     # completar las claves
