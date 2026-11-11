@@ -23,8 +23,8 @@ de documento, y algunos documentos se cubren dentro de otro.
 | 9 | Configuración CI/CD | [`11-cicd.md`](11-cicd.md) | Hecho |
 | 10 | Procedimiento de publicación en Internet | [`15-publicacion.md`](15-publicacion.md) | Hecho; la aplicación está publicada y probada por Internet |
 | 11 | Manual de monitoreo | [`08-monitoreo.md`](08-monitoreo.md) | Hecho |
-| 12 | Gestión de incidencias | [`12-incidencias.md`](12-incidencias.md) | Hecho; 17 incidencias cargadas y verificadas por API. Faltan capturas |
-| 13 | Flujos de n8n | [`14-automatizacion.md`](14-automatizacion.md) | Hecho; los tres flujos corridos, y arreglados. Faltan capturas |
+| 12 | Gestión de incidencias | [`12-incidencias.md`](12-incidencias.md) | Hecho; 17 incidencias cargadas y verificadas por API, con sus tres capturas |
+| 13 | Flujos de n8n | [`14-automatizacion.md`](14-automatizacion.md) | Hecho; los tres flujos corridos, arreglados y capturados |
 | 14 | Informe de seguridad | [`09-seguridad.md`](09-seguridad.md) | Hecho |
 | 15 | Procedimiento de backup y restauración | [`05-docker.md`](05-docker.md), sección de copias | Hecho |
 | 16 | Limitaciones conocidas y mejoras futuras | [`16-limitaciones.md`](16-limitaciones.md) | Hecho |
@@ -34,7 +34,9 @@ Además, fuera de la lista de los dieciséis:
 | Documento | Para qué |
 |---|---|
 | [`13-documental.md`](13-documental.md) | Punto 12 — gestión documental con Nextcloud |
-| [`capturas/`](capturas/README.md) | Las catorce capturas de pantalla, con **qué prueba cada una** |
+| [`scrum/seguimiento.md`](scrum/seguimiento.md) | Punto 2 — **evidencias de seguimiento**: bitácora, impedimentos y cambios de alcance |
+| [`17-defensa.md`](17-defensa.md) | Punto 15 — la **otra mitad** del punto: guion de los 20 minutos, reparto de los cinco frentes y 42 preguntas con respuesta |
+| [`capturas/`](capturas/README.md) | Las diecisiete capturas de pantalla, con **qué prueba cada una** |
 
 ## Qué punto cubre cada archivo
 
@@ -53,6 +55,10 @@ Además, fuera de la lista de los dieciséis:
 | `12-incidencias.md` | 11 — gestión de incidencias |
 | `13-documental.md` | 12 — gestión documental |
 | `14-automatizacion.md` | 13 — automatización con n8n |
+| `15-publicacion.md` | 9 — publicación y acceso desde Internet |
+| `16-limitaciones.md` | 15 — limitaciones conocidas y mejoras futuras |
+| `17-defensa.md` | 15 — guion de la defensa oral y banco de preguntas |
+| `scrum/seguimiento.md` | 2 — evidencias de seguimiento del proyecto |
 
 ## Cómo se escriben
 
