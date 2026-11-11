@@ -87,8 +87,13 @@ jobs:
           # vieja.
           pull: true
           tags: ${{ steps.nombre.outputs.imagen }}:prueba
-          cache-from: type=gha,scope=${{ matrix.componente }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.componente }}
+          # Sin cache a proposito. La imagen que se escanea tiene que ser
+          # la que describe el package-lock, no una capa reutilizada: con
+          # cache, Trivy reportaba brace-expansion 5.0.9 y undici 6.28.0,
+          # versiones que el lock de este repositorio ya no tiene. Cuesta
+          # unos minutos de construccion y compra que el escaneo diga la
+          # verdad.
+          no-cache: true
 
       # Se escanea ANTES de publicar. Publicar y escanear despues significa
       # que la imagen con la vulnerabilidad ya esta disponible para que
@@ -121,7 +126,9 @@ jobs:
             ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_sha || github.sha }}
             ${{ steps.nombre.outputs.imagen }}:${{ github.event.workflow_run.head_branch || github.ref_name }}
             ${{ github.event.workflow_run.head_branch == 'main' && format('{0}:latest', steps.nombre.outputs.imagen) || '' }}
-          cache-from: type=gha,scope=${{ matrix.componente }}
+          # Lo mismo que arriba: si esta construccion usara cache, se
+          # publicaria algo distinto de lo que paso el escaneo.
+          no-cache: true
 
       - name: Resumen
         run: |
