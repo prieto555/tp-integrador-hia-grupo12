@@ -104,33 +104,44 @@ Después abrí **http://127.0.0.1:5050** → `TP Integrador HIA` → doble clic 
 ls -la infra/compose/backups/*.dump
 ```
 
-**Tenés que ver (medido):** archivos de **~466 MB**… y también **varios de
-0 bytes**. Esos no son un accidente, y vale saber por qué.
+**Tenés que ver (medido):** archivos de **~466 MB** y **ninguno de 0 bytes**.
 
 ```bash
-docker logs restoya_backup --tail 20
+docker logs restoya_backup --tail 6
 ```
 
-**Tenés que ver (medido):** el patrón se repite en cada arranque:
+**Tenés que ver (medido):**
 
 ```
-22:07:59 | Servicio iniciado. Intervalo: 3600s. Retiene: 7 copias.
-22:07:59 | ERROR| fallo pg_dump, ver detalle arriba
-22:07:59 | ROTA | restoyadb-20261110-162016.dump eliminada por retencion
+22:22:27 | Servicio iniciado. Intervalo: 3600s. Retiene: 7 copias.
+22:26:10 | OK   | restoyadb-20261111-222227.dump | 466.8M | 223s | verificado
 ```
 
-> ⚠️ **Es un defecto real del servicio de copias, encontrado el 11/11 corriendo
-> esta lista.** Al arrancar intenta un volcado **antes de que la base esté
-> lista**, falla, y hace dos cosas mal: **deja el archivo de 0 bytes** en disco,
-> y **igual rota las copias viejas**, borrando una buena. O sea que cada
-> reinicio del stack cambia una copia válida por una vacía. Con siete de
-> retención y unos cuantos reinicios, la carpeta se llena de nada.
+El `verificado` no es decorativo: el servicio comprueba que el archivo no esté
+vacío **y** que `pg_restore -l` lo pueda leer. Una copia no cuenta como copia
+hasta que pasa las dos.
+
+> **Esto estuvo roto hasta el 11/11, y la historia sirve para la defensa.** La
+> carpeta tenía cuatro archivos de 0 bytes, y el registro mostraba lo mismo en
+> cada arranque —los tres en el mismo segundo—:
 >
-> Lo que **sí** funciona: cuando la base está lista, el volcado sale bien y el
-> propio servicio lo verifica (`466.8M | 214s | verificado`).
+> ```
+> 22:07:59 | Servicio iniciado. Intervalo: 3600s. Retiene: 7 copias.
+> 22:07:59 | ERROR| fallo pg_dump, ver detalle arriba
+> 22:07:59 | ROTA | restoyadb-20261110-162016.dump eliminada por retencion
+> ```
 >
-> **Antes de mostrar esto, borrá las de 0 bytes.** Y si se arregla, son dos
-> cosas: no rotar cuando el volcado falló, y borrar el archivo vacío.
+> Eran **tres errores encadenados**. El servicio arrancaba junto con el stack y
+> volcaba **antes de que la base aceptara conexiones**; `pg_dump -f` dejaba el
+> archivo creado igual; y **la rotación estaba fuera del `if`**, así que corría
+> después del fallo — y como `ls -1t` ordena por fecha, el archivo vacío
+> contaba como la copia más nueva y **empujaba una buena fuera de la retención**.
+>
+> O sea que cada reinicio del stack cambiaba una copia válida por una vacía.
+> Una copia de 0 bytes es **peor que no tener copia**, porque parece respaldo.
+>
+> Si alguna vez vuelve a aparecer un `.dump` de 0 bytes, el arreglo se salió:
+> está en `infra/postgres/backup.sh`.
 
 ---
 
