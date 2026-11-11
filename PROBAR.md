@@ -7,9 +7,9 @@ tenés que ver**.
 Para instalar desde cero está [`INSTALACION.md`](INSTALACION.md). Esto es para
 cuando ya está levantado.
 
-> Las salidas marcadas **(medido)** se obtuvieron corriendo esto el 11/11/2026.
-> Las marcadas **(a comprobar)** son lo que el informe dice que tiene que
-> pasar, pero no se corrieron en esa tanda.
+> **Todas las salidas de abajo están medidas**: se corrió la lista entera el
+> 11/11/2026 con los 23 contenedores arriba. Si algo te da distinto, es que
+> cambió algo — no que el archivo esté desactualizado.
 
 ---
 
@@ -104,11 +104,33 @@ Después abrí **http://127.0.0.1:5050** → `TP Integrador HIA` → doble clic 
 ls -la infra/compose/backups/*.dump
 ```
 
-**Tenés que ver:** archivos de **cientos de MB**.
+**Tenés que ver (medido):** archivos de **~466 MB**… y también **varios de
+0 bytes**. Esos no son un accidente, y vale saber por qué.
 
-> ⚠️ **Hay copias de 0 bytes** del 11/11: quedaron de las veces que el motor de
-> Docker se cayó en mitad del volcado. Una copia de 0 bytes es peor que ninguna,
-> porque parece que hay respaldo. Borralas antes de mostrar esto.
+```bash
+docker logs restoya_backup --tail 20
+```
+
+**Tenés que ver (medido):** el patrón se repite en cada arranque:
+
+```
+22:07:59 | Servicio iniciado. Intervalo: 3600s. Retiene: 7 copias.
+22:07:59 | ERROR| fallo pg_dump, ver detalle arriba
+22:07:59 | ROTA | restoyadb-20261110-162016.dump eliminada por retencion
+```
+
+> ⚠️ **Es un defecto real del servicio de copias, encontrado el 11/11 corriendo
+> esta lista.** Al arrancar intenta un volcado **antes de que la base esté
+> lista**, falla, y hace dos cosas mal: **deja el archivo de 0 bytes** en disco,
+> y **igual rota las copias viejas**, borrando una buena. O sea que cada
+> reinicio del stack cambia una copia válida por una vacía. Con siete de
+> retención y unos cuantos reinicios, la carpeta se llena de nada.
+>
+> Lo que **sí** funciona: cuando la base está lista, el volcado sale bien y el
+> propio servicio lo verifica (`466.8M | 214s | verificado`).
+>
+> **Antes de mostrar esto, borrá las de 0 bytes.** Y si se arregla, son dos
+> cosas: no rotar cuando el volcado falló, y borrar el archivo vacío.
 
 ---
 
@@ -126,9 +148,18 @@ docker exec restoya_db psql -U restoya -d restoyadb -c \
   "EXPLAIN ANALYZE SELECT * FROM pedidos WHERE estado='PENDIENTE' ORDER BY \"fechaCreacion\" DESC LIMIT 50;"
 ```
 
-**Tenés que ver (a comprobar):** un `Index Scan`, **no** un `Seq Scan`, y un
-`Execution Time` de milisegundos. El antes y después completo está en
-[`docs/07-optimizacion-sql.md`](docs/07-optimizacion-sql.md).
+**Tenés que ver (medido):** `28` índices —incluye claves primarias y únicas,
+no sólo los 10 que se agregaron—, y en el `EXPLAIN`:
+
+```
+Limit  (cost=0.43..17.53 rows=50) (actual time=1.456..2.175 rows=50 loops=1)
+  ->  Index Scan Backward using pedidos_cocina on pedidos
+Execution Time: 2.255 ms
+```
+
+Lo que importa es que diga **`Index Scan`** y no `Seq Scan`, y que el tiempo
+sea de milisegundos sobre 6.000.000 de filas. El antes y después completo está
+en [`docs/07-optimizacion-sql.md`](docs/07-optimizacion-sql.md).
 
 ---
 
@@ -299,17 +330,28 @@ for i in $(seq 1 11); do
 done
 ```
 
-**Tenés que ver (a comprobar):** diez respuestas de error de credenciales y el
-**intento 11 en `429`**.
+**Tenés que ver (medido):** diez `401` y del **intento 11 en adelante `429`**.
+
+> ⚠️ Esto **bloquea los ingresos desde esta máquina por 15 minutos**. No lo
+> corras cinco minutos antes de la demostración.
 
 ```bash
 curl -s -o /dev/null -w "GET /api/roles sin token -> %{http_code}\n" http://127.0.0.1:8080/api/roles
 ```
 
-**Tenés que ver (a comprobar):** **`200`**. Eso es **D-01**: diecinueve
-endpoints sin ninguna autenticación, documentado y **no corregido a propósito**.
-Si da `200`, el hallazgo sigue vigente y **hay que bajar el túnel después de la
-presentación**.
+**Tenés que ver (medido):** **`200`**. Y `/api/funciones` también. Eso es
+**D-01**: diecinueve endpoints sin ninguna autenticación, documentado y **no
+corregido a propósito**. Sigue vigente, así que **hay que bajar el túnel después
+de la presentación**.
+
+Para que se vea el contraste, probá al lado uno que **sí** está protegido:
+
+```bash
+curl -s -o /dev/null -w "GET /api/usuarios sin token -> %{http_code}\n" http://127.0.0.1:8080/api/usuarios
+```
+
+**Tenés que ver (medido):** **`401`**. Esa es la diferencia exacta que hay que
+poder explicar: cinco archivos de rutas no importan el middleware y el resto sí.
 
 ---
 
