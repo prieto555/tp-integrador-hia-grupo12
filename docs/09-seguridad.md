@@ -3,8 +3,16 @@
 Entregable del punto 15.9. Cubre el punto 14 de la consigna (épica E14 del
 backlog).
 
-Todo verificado contra el stack corriendo. Los comandos de verificación están
-al final de cada sección, con su salida real.
+Son **diecisiete hallazgos**. Todos están verificados contra el stack
+corriendo: los comandos de verificación están al final de cada sección, con su
+salida real. **El hallazgo 12 es la única excepción** y lo dice en su propia
+sección: ahí la evidencia es el código, no una corrida.
+
+> Los seis últimos no se buscaron: aparecieron. Los hallazgos 13 y 14 salieron
+> de **publicar** la aplicación, y el 15, el 16 y el 17 de **sacar las capturas
+> de pantalla** para la entrega. Vale decirlo porque es el patrón: los
+> controles que fallaron no fallaban al leer la configuración, fallaban al
+> usar el sistema.
 
 ---
 
@@ -23,6 +31,12 @@ al final de cada sección, con su salida real.
 | 9 | Imágenes base desactualizadas | Alta | **Corregidas hasta donde hay parche** |
 | 10 | `@scarf/scarf` llama a su servidor al instalarse | Baja | Documentado, sin acción |
 | 11 | El limitador guarda las cuentas en memoria | Media | Documentado, no corregido |
+| 12 | 19 endpoints sin ninguna autenticación | Crítica | **Documentado, no corregido** |
+| 13 | Las cabeceras de seguridad de nginx no llegaban a ninguna respuesta de HTML | Media | **Corregido** |
+| 14 | Al publicar, el límite de login pasó a ser un interruptor global | Alta | **Corregido** |
+| 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Corregida** (PR #7) |
+| 16 | La imagen de n8n está marcada como crítica por el propio n8n | Media | **Documentado, no corregido** |
+| 17 | pgAdmin no pide ninguna credencial, y entra a la base con la clave guardada | Alta | **Documentado, no corregido** |
 
 ---
 
@@ -301,6 +315,244 @@ el *compose* y queda anotado como tarea, no hecho.
 
 ---
 
+## 12 · Diecinueve endpoints sin ninguna autenticación
+
+Apareció escribiendo el diagnóstico del punto 1, después de cerrados los nueve
+primeros hallazgos de este informe, y es más grave que varios de ellos. Cinco
+archivos de rutas **no importan el middleware de autenticación, ni una sola
+vez**:
+
+| Archivo | Endpoints | Lo peor que hay ahí |
+|---|---|---|
+| `backend/src/routes/pago.route.js:5-9` | 5 | `POST /` registra un pago; `DELETE /:id` lo borra |
+| `backend/src/routes/rol.route.js:7-11` | 5 | `DELETE /:id` borra un rol |
+| `backend/src/routes/funcion.route.js:7-11` | 5 | `PUT /:id` reescribe un permiso del sistema |
+| `backend/src/routes/cocina.route.js:6-9` | 2 | `PATCH /estado/:idPedido` cambia el estado de cualquier pedido |
+| `backend/src/routes/reporte.route.js:5-6` | 2 | el PDF y el Excel del cierre de caja |
+
+No es un criterio de diseño: `caja.route.js` —el mismo dominio, la misma
+plata— **sí** tiene `router.use(verificarToken)` y
+`router.use(verificarRol('Cajero', 'Gerente'))` en sus líneas 7 y 8. Son cinco
+archivos que quedaron afuera.
+
+La combinación peor es `DELETE /api/roles/:id` con el `ON DELETE CASCADE` de
+`usuario_roles`: borrar el rol Gerente sin autenticarse deja el sistema **sin
+nadie que pueda administrarlo**, y la cuenta de administrador sigue existiendo
+pero sin rol.
+
+Vale aclarar qué lo contiene hoy y qué no:
+
+- **Lo contiene** que el backend no publique puerto: desde afuera sólo se llega
+  por nginx, que reenvía `/api/`. Lo cual no ayuda nada acá, porque estas rutas
+  están justamente bajo `/api/`.
+- **No lo contiene** el *guard* de Angular. Es comodidad de interfaz, no
+  autorización: `curl` no pasa por Angular.
+- **Lo contiene a medias** el limitador general de 300 peticiones por minuto.
+  Frena el abuso masivo, no la petición única que borra un rol.
+
+> **Por qué queda documentado y no corregido.** Agregar `verificarToken` es una
+> línea por archivo, pero cambia el comportamiento de pantallas que hoy
+> funcionan sin mandar *token* —cocina llama a `/api/cocina` y la caja a
+> `/api/reportes`— y habría que verificar cada una. Sin pruebas automatizadas y
+> con la entrega encima, eso es cómo se rompe una demostración. El arreglo está
+> anotado con su alcance en [`16-limitaciones.md`](16-limitaciones.md), §8.
+
+**Verificación pendiente.** A diferencia de los once hallazgos anteriores, éste
+**no está comprobado contra el stack corriendo**: el `curl` sin token quedó sin
+correr porque el motor de Docker no estaba levantado. La evidencia de hoy es el
+código, en los archivos y líneas de la tabla.
+
+---
+
+## 13 y 14 · Los dos que aparecieron al publicar
+
+Éstos no se encontraron auditando. Se encontraron **publicando la aplicación**,
+y los dos son del mismo tipo: un control que este informe dio por cerrado y
+verificado, y lo estaba — en local. Lo rompió el túnel.
+
+La medición completa, con la salida de cada comando, está en
+[`15-publicacion.md`](15-publicacion.md) §6.4. Acá va lo que importa para un
+informe de seguridad.
+
+### 13 · Las tres cabeceras de nginx no llegaban a ninguna respuesta de HTML
+
+`X-Content-Type-Options`, `X-Frame-Options` y `Referrer-Policy` estaban
+declaradas a nivel del servidor en `frontend/nginx.conf`, **con `always`**, y
+no aparecían en `/`, ni en los `.js`, ni en una ruta inexistente. Se descartó
+que las sacara Cloudflare pidiéndolas directo a nginx en `127.0.0.1`: tampoco
+estaban.
+
+En nginx, **si un bloque `location` tiene un `add_header` propio, no hereda
+ninguno de los del padre**. Los dos bloques que ponían un `Cache-Control` se
+comían las tres cabeceras enteras, y como `location /` hace `try_files` hacia
+`/index.html`, hasta la página principal caía en uno de ellos.
+
+El efecto neto era el contrario del buscado: a `/api/` —que ya las tenía por
+Helmet— llegaban **duplicadas**, con dos `Referrer-Policy` de valor distinto, y
+a los archivos estáticos, que son la única razón por la que esas líneas
+existen, no llegaba ninguna. La que más se extraña es `X-Frame-Options` en el
+documento HTML, que es la que frena el *clickjacking*.
+
+**Corregido**: declaradas en cada bloque que sirve contenido y sacadas del
+nivel del servidor. Verificado por el túnel y en local.
+
+### 14 · El límite de intentos de login pasó a ser un interruptor global
+
+Éste es grave y es consecuencia directa de publicar.
+
+Un `POST /api/pedidos` hecho por el túnel desde la IP pública
+`181.177.197.253` quedó registrado en `historial_accesos` como `172.24.0.17`,
+que es el contenedor de `cloudflared`.
+
+**`cloudflared` no manda `X-Forwarded-For`: manda `CF-Connecting-IP`.** Así que
+el `$proxy_add_x_forwarded_for` de nginx no tenía ninguna cadena que ampliar y
+quedaba con un solo elemento, la IP del propio `cloudflared`. Express, con
+`trust proxy = 1`, descarta ese único salto y cae en la IP del *socket*.
+
+Lo que eso significa, y es lo que hay que poder decir en la defensa:
+
+> El limitador cuenta **por IP**. Con todas las peticiones de Internet llegando
+> con la misma IP, **diez intentos fallidos de cualquiera dejan afuera a todo
+> el mundo durante quince minutos.**
+
+El hallazgo 3 de este informe bajó ese límite de 100 a 10 para frenar la fuerza
+bruta. Al publicar, ese mismo control se convierte en una forma de **apagar el
+inicio de sesión del sistema desde afuera, sin autenticarse y gratis**. Y el
+historial de accesos deja de servir para investigar nada: todas las filas con
+la misma IP.
+
+Dicho de otro modo: **un control bien configurado puede volverse un ataque de
+denegación de servicio cuando cambia la topología de la red debajo.** Es el
+hallazgo que mejor justifica por qué la consigna pide probar y no afirmar.
+
+**Corregido** con un `map` en nginx que toma `CF-Connecting-IP` cuando viene y
+la cadena normal cuando no, así el acceso local sin túnel sigue funcionando
+igual. **No se tocó `trust proxy = 1`**: sigue habiendo un salto de confianza,
+nginx, y ahora lo que nginx le pasa es la IP correcta.
+
+Queda una condición escrita en el propio archivo: confiar en `CF-Connecting-IP`
+es seguro **sólo porque a ese nginx no se llega de otra forma** —el puerto 80
+no está publicado en la LAN, únicamente en `127.0.0.1` y por el túnel—. Si
+algún día se publica el puerto, la cabecera pasa a ser falsificable y hay que
+reemplazar el `map` por una lista de IP de confianza de Cloudflare.
+
+Verificación, las tres filas reales de `historial_accesos`:
+
+```
+ idHistorial |       ip        | metodo
+-------------+-----------------+--------------------------------
+     6000008 | 172.24.0.17     | por el tunel, ANTES del arreglo
+     6000009 | 181.177.197.253 | por el tunel, despues
+     6000010 | 172.24.0.1      | local, despues (no se rompio)
+```
+
+---
+
+## 15 y 16 · n8n: la autenticación que no existe y la versión que el propio n8n marca como crítica
+
+Los dos aparecieron sacando las capturas de pantalla para la entrega, que es
+una forma rara de encontrar un agujero de seguridad y vale contarla: hubo que
+entrar a cada herramienta para fotografiarla, y n8n **no pidió nada**.
+
+### 15 · `N8N_BASIC_AUTH_*` no hace nada en n8n 1.x
+
+El `docker-compose.yml` dice:
+
+```yaml
+      # La interfaz de administracion pide usuario y clave (requisito de
+      # seguridad del punto 13).
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:?falta N8N_PASSWORD en el .env}
+```
+
+**Ese comentario es falso.** n8n quitó la autenticación básica en la versión
+1.0; la imagen que corre acá es la **1.70.1**, así que esas tres variables se
+leen y se ignoran. La interfaz usa "cuentas de usuario", y mientras no exista
+una cuenta de propietario, n8n le ofrece crearla **a cualquiera que entre**.
+
+Medido:
+
+```
+$ curl -sI http://127.0.0.1:5678/
+HTTP/1.1 200 OK
+                       <- no hay WWW-Authenticate: no pide nada
+
+$ curl -s http://127.0.0.1:5678/rest/settings
+  userManagement.showSetupOnFirstLoad: true
+  versionCli: 1.70.1
+```
+
+Y la captura [`capturas/50-n8n-sin-autenticacion.png`](capturas/50-n8n-sin-autenticacion.png)
+muestra el formulario **"Set up owner account"** servido sin credenciales.
+
+**Por qué importa más de lo que parece.** n8n es el servicio con más
+credenciales adentro de todo el sistema: tiene el *token* de la API de Mantis,
+la cuenta de robot de Nextcloud, el secreto del webhook de alertas y el SMTP.
+Quien se declare propietario se lleva las cuatro. Es, además, el único
+contenedor conectado a las cuatro redes de Docker (ver
+[`02-arquitectura.md`](02-arquitectura.md) §3), o sea el mejor punto de partida
+que hay en este sistema para moverse hacia los demás.
+
+**Lo que lo contiene hoy, y es lo único:** el puerto 5678 está publicado en
+`127.0.0.1` y **no está en el *ingress* del túnel** (ver
+[`15-publicacion.md`](15-publicacion.md) §3). Desde Internet no se llega. Desde
+esta máquina, sí, y sin credencial.
+
+**La ventana se cerró el 11/11**, a pedido del dueño del sistema: se reclamó la
+cuenta de propietario con la `N8N_PASSWORD` que **ya estaba en el `.env`** —la
+que se había puesto para la autenticación básica que no existe— y el correo
+`admin@restoya.com.ar`, el mismo dominio que usa pgAdmin. No se inventó ninguna
+credencial nueva. Comprobado después: `showSetupOnFirstLoad` pasó a `false`, o
+sea que n8n ya no le ofrece el sistema al primero que entre.
+
+> Vale aclarar por qué no se hizo antes: hasta que el dueño lo pidió, crear una
+> cuenta era una decisión suya, no de quien estaba sacando capturas. Que la
+> ventana estuviera abierta no la convertía en una invitación.
+
+**La causa se corrigió aparte, en el [PR #7](https://github.com/prieto555/tp-integrador-hia-grupo12/pull/7)**, en la rama `fix/n8n-autenticacion`. Reclamar
+la cuenta sólo cerraba la ventana en **esta** máquina: mientras el `compose`
+siguiera diciendo que n8n pide usuario y clave, el próximo que levantara el
+proyecto en una máquina limpia iba a creer que está protegido, y la ventana se
+abría de nuevo.
+
+Qué hace ese PR:
+
+1. **borra las tres variables y el comentario falso**, y deja en su lugar escrito
+   por qué no están, para que nadie las vuelva a poner;
+2. cambia `N8N_USER` —que no leía nadie— por `N8N_EMAIL`, que es lo que n8n pide
+   de verdad para la cuenta de propietario, con la regla de la clave anotada
+   (ocho caracteres, un número y una mayúscula, o devuelve 400 sin explicar);
+3. deja dicho que la protección real de n8n hoy son dos cosas: la cuenta de
+   propietario, y que el puerto está en `127.0.0.1` y **fuera del *ingress***.
+
+**Lo que sigue sin resolverse:** si alguna vez hiciera falta publicar n8n, hay
+que poner algo delante que autentique. Las cuentas de usuario de n8n no alcanzan
+para un servicio con estas credenciales adentro expuesto a Internet.
+
+El cambio fue a un PR aparte y no a éste, que es de documentación: mezclar un
+cambio de infraestructura en el PR de los informes es cómo se pierde la
+trazabilidad de qué rompió qué. Por eso la rama se llama `fix/`, que es una de
+las cuatro que define la estrategia de ramas del punto 3.
+
+### 16 · La imagen de n8n está marcada como crítica por el propio n8n
+
+En la misma captura, abajo a la derecha, el aviso lo da n8n solo:
+
+> *Critical update available — Please update to version 1.121.0 or higher.*
+
+La imagen está fijada en `n8nio/n8n:1.70.1`. Fijar la versión es correcto y es
+lo que este trabajo defiende en [`03-inventario.md`](03-inventario.md) §4; lo
+que falta es la otra mitad: **algo que avise cuando la versión fijada queda
+vieja**. Es exactamente la mejora que ese documento propone (Renovate o
+Dependabot) y que no está hecha.
+
+El escaneo de Trivy del punto 14 no lo atrapó porque sólo mira las imágenes del
+backend y del frontend, que son las que el *pipeline* construye. Las imágenes
+de terceros del *compose* no se escanean. Eso también queda anotado.
+
+---
+
 ## Matriz de amenazas (E14-04)
 
 Las cinco familias que pide la consigna, con lo que hay hoy y lo que falta. La
@@ -402,6 +654,81 @@ exactos con el origen. Está medido, no estimado
 Abrir la incidencia en Mantis (punto 11) con: qué pasó, desde cuándo, cómo se
 detectó, qué se hizo y **qué se cambia para que no vuelva a pasar**. Sin ese
 último punto el ciclo no se cierra, sólo se repite.
+
+---
+
+## 17 · pgAdmin: la consola de la base, abierta y ya conectada
+
+Apareció el 11/11 sacando la captura que faltaba del punto 4, y es **el mismo
+error que el hallazgo 15**: credenciales configuradas que nadie exige.
+
+El `compose` declara esto:
+
+```yaml
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+```
+
+Las dos primeras líneas dan a entender que hay un usuario y una clave. Las dos
+siguientes las **anulan**: `SERVER_MODE: False` pone a pgAdmin en modo
+escritorio, que **no tiene inicio de sesión**, y `MASTER_PASSWORD_REQUIRED:
+False` saca también la clave maestra que protege las credenciales guardadas.
+
+Medido, sin ninguna cookie:
+
+```
+$ curl -s -D - -o /dev/null http://127.0.0.1:5050/
+HTTP/1.1 302 FOUND
+Location: /browser/
+
+$ curl -sL -o /dev/null -w "%{url_effective} -> %{http_code}
+" http://127.0.0.1:5050/
+http://127.0.0.1:5050/browser/ -> 200
+```
+
+No hay redirección a ningún `/login`: la consola se sirve directamente. La
+captura [`capturas/60-pgadmin-sin-credenciales.png`](capturas/60-pgadmin-sin-credenciales.png)
+es la interfaz completa, abierta sin escribir nada.
+
+**Y hay una segunda mitad, peor.** `pgadmin-servers.json` registra el servidor
+pero **no guarda la clave**, así que en teoría conectarse debería pedirla. No la
+pide: pgAdmin la tiene guardada en su volumen `pgadmin_data` de una sesión
+anterior, y como no hay clave maestra, **esa credencial guardada tampoco está
+protegida**. Al hacer doble clic sobre el servidor conectó solo. La captura
+[`capturas/61-pgadmin-conectado.png`](capturas/61-pgadmin-conectado.png) lo
+muestra: `restoyadb` desplegada hasta `Tables (12)`, con el panel de actividad
+en vivo.
+
+O sea que quien llegue al puerto 5050 no obtiene *una herramienta* para
+administrar la base: obtiene **una sesión ya abierta como `restoya`** sobre
+30 millones de filas, con el editor de SQL incluido.
+
+**Lo que lo contiene hoy, y es lo mismo que contiene a n8n:** el puerto se
+publica en `127.0.0.1` y **no está en el *ingress* del túnel** (ver
+[`15-publicacion.md`](15-publicacion.md) §3, donde pgAdmin figura
+explícitamente entre los nueve servicios que **no** se publican, con el motivo
+escrito: «con eso se lee y se borra todo»). Desde Internet no se llega.
+
+**Documentado y no corregido**, y la razón es la misma que en D-01: cambiar a
+`SERVER_MODE: True` a días de la defensa obliga a rehacer el alta del servidor
+y la clave maestra, y si algo sale mal se pierde el cliente de administración
+que el punto 4 pide **demostrar funcionando**. El arreglo, en orden:
+
+1. `PGADMIN_CONFIG_SERVER_MODE: "True"`, que es lo que enciende el inicio de
+   sesión con `PGADMIN_DEFAULT_EMAIL` y `PGADMIN_DEFAULT_PASSWORD` —las dos
+   variables que hoy están puestas y no sirven para nada;
+2. `MASTER_PASSWORD_REQUIRED: "True"`, para que la clave de la base guardada en
+   el volumen quede cifrada detrás de algo;
+3. dejar escrito en el `compose` que el puerto no se publica, igual que se hizo
+   con n8n en el PR #7.
+
+> **La lección, que es la misma de los hallazgos 15 y 17 juntos:** en los dos
+> casos había variables de credenciales en el `.env` y nadie las exigía. Tener
+> una clave configurada no es lo mismo que tener una clave pedida, y la única
+> forma de notar la diferencia es **entrar y mirar**. Las dos aparecieron
+> sacando capturas, no leyendo la configuración.
 
 ---
 
