@@ -32,6 +32,10 @@ repositorio. No son submódulos: se editan como carpetas normales.
 > Y para **comprobar punto por punto que cada cosa funciona** —con el comando
 > y qué tenés que ver en cada caso— está [`PROBAR.md`](PROBAR.md).
 
+> Para **publicarlo en un dominio propio** —conseguir el dominio, pasarlo a
+> Cloudflare, levantar el túnel y comprobar que se llega de afuera— está
+> [`DOMINIO.md`](DOMINIO.md).
+
 ```bash
 cd infra/compose
 cp .env.example .env     # completar las claves

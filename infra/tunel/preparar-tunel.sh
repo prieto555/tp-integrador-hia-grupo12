@@ -11,7 +11,10 @@
 #   2. Crea el túnel si no existe, y deja su archivo de credenciales en
 #      infra/tunel/.credenciales.json (ignorado por Git: es un secreto).
 #   3. Genera config.generado.yml a partir de la plantilla versionada.
-#   4. Da de alta el registro DNS que apunta el nombre público al túnel.
+#   4. Da de alta los registros DNS que apuntan los cinco nombres públicos
+#      al túnel.
+#   5. Le dice a Nextcloud cuál es su nombre público, que es lo único que no
+#      se puede dejar en un archivo de configuración.
 #
 # Lo que NO hace: levantar el túnel. Eso es `docker compose --profile tunel
 # up -d`, y es un paso aparte a propósito: publicar algo en Internet no tiene
@@ -32,6 +35,30 @@ set -a; . "$ENV"; set +a
 
 TUNEL="${TUNEL_NOMBRE:-restoya}"
 DOMINIO="${DOMINIO_PUBLICO:?falta DOMINIO_PUBLICO en el .env (el nombre publico de la aplicacion, por ejemplo restoya.midominio.com)}"
+
+# Los nombres de las herramientas. Se exigen en vez de derivarlos de la zona
+# a proposito: el docker-compose.yml lee estas MISMAS variables del .env para
+# decirle a cada herramienta cual es su nombre publico. Si el script se los
+# inventara, el tunel publicaria un nombre y la herramienta armaria sus
+# enlaces con otro, que es la clase de desajuste que no se ve hasta que
+# alguien hace clic en un enlace de un correo de Mantis.
+AYUDA="en el .env. Copia el bloque del final de .env.example y cambia el dominio."
+DOMINIO_N8N="${DOMINIO_N8N:?falta DOMINIO_N8N $AYUDA}"
+DOMINIO_MANTIS="${DOMINIO_MANTIS:?falta DOMINIO_MANTIS $AYUDA}"
+DOMINIO_NUBE="${DOMINIO_NUBE:?falta DOMINIO_NUBE $AYUDA}"
+DOMINIO_GRAFANA="${DOMINIO_GRAFANA:?falta DOMINIO_GRAFANA $AYUDA}"
+
+# Un solo nivel de subdominio. El certificado gratuito de Cloudflare cubre
+# dominio.com y *.dominio.com, pero no algo.otracosa.dominio.com: con dos
+# niveles el navegador corta por certificado invalido y el tunel ni se entera.
+for N in "$DOMINIO" "$DOMINIO_N8N" "$DOMINIO_MANTIS" "$DOMINIO_NUBE" "$DOMINIO_GRAFANA"; do
+    ETIQUETAS=$(echo "$N" | awk -F. "{print NF}")
+    if [ "$ETIQUETAS" -gt 3 ]; then
+        echo "ADVERTENCIA: $N tiene mas de un nivel de subdominio." >&2
+        echo "El certificado gratuito de Cloudflare no lo cubre y el navegador" >&2
+        echo "va a cortar por certificado invalido. Usa un solo nivel." >&2
+    fi
+done
 
 registro() { echo "$(date '+%H:%M:%S') | tunel | $*"; }
 
@@ -119,18 +146,26 @@ fi
 # -----------------------------------------------------------------------------
 node -e '
 const fs = require("fs");
-const [plantilla, salida, tunel, dominio] = process.argv.slice(1);
+const [plantilla, salida, tunel, dominio, n8n, mantis, nube, grafana] = process.argv.slice(1);
 let s = fs.readFileSync(plantilla, "utf8");
 // split/join y no replace: en el texto de reemplazo de String.replace, las
 // secuencias $&, $`, $\x27 y $1 son especiales.
 s = s.split("TUNEL_NOMBRE").join(tunel);
 s = s.split("DOMINIO_PUBLICO").join(dominio);
-if (s.includes("DOMINIO_PUBLICO") || s.includes("TUNEL_NOMBRE")) {
+s = s.split("DOMINIO_N8N").join(n8n);
+s = s.split("DOMINIO_MANTIS").join(mantis);
+s = s.split("DOMINIO_NUBE").join(nube);
+s = s.split("DOMINIO_GRAFANA").join(grafana);
+// Un marcador sin reemplazar en un "hostname:" lo deja VACIO, y una regla
+// con hostname vacio en cloudflared atrapa todo el trafico: seria publicar
+// un servicio interno en el nombre de la aplicacion. Por eso se corta.
+if (/DOMINIO_[A-Z0-9]|TUNEL_NOMBRE/.test(s)) {
   throw new Error("quedaron marcadores sin reemplazar");
 }
 fs.writeFileSync(salida, "# GENERADO por preparar-tunel.sh a partir de config.plantilla.yml.\n"
   + "# No editar aca: editar la plantilla, que es la que se versiona.\n\n" + s);
-' "$PLANTILLA" "$GENERADO" "$TUNEL" "$DOMINIO"
+' "$PLANTILLA" "$GENERADO" "$TUNEL" "$DOMINIO" \
+  "$DOMINIO_N8N" "$DOMINIO_MANTIS" "$DOMINIO_NUBE" "$DOMINIO_GRAFANA"
 registro "config.generado.yml escrito para $DOMINIO."
 
 # -----------------------------------------------------------------------------
@@ -140,21 +175,54 @@ registro "config.generado.yml escrito para $DOMINIO."
 # idempotente del lado de Cloudflare, pero si el nombre ya apunta a otra cosa
 # avisa en vez de pisarlo.
 # -----------------------------------------------------------------------------
-registro "Dando de alta el registro DNS de $DOMINIO."
-if salida=$(cloudflared tunnel route dns "$TUNEL" "$DOMINIO" 2>&1); then
-    registro "DNS listo."
+for NOMBRE in "$DOMINIO" "$DOMINIO_N8N" "$DOMINIO_MANTIS" "$DOMINIO_NUBE" "$DOMINIO_GRAFANA"; do
+    registro "Dando de alta el registro DNS de $NOMBRE."
+    if salida=$(cloudflared tunnel route dns "$TUNEL" "$NOMBRE" 2>&1); then
+        registro "DNS listo: $NOMBRE."
+    else
+        case "$salida" in
+            *"already configured"*|*"already exists"*|*"record with that host"*)
+                registro "$NOMBRE ya existia y apunta a este tunel." ;;
+            *)
+                echo "No se pudo dar de alta el DNS de $NOMBRE:" >&2
+                echo "$salida" | sed 's/^/    /' >&2
+                echo >&2
+                echo "Si el nombre ya apunta a otra cosa, hay que resolverlo a mano en el" >&2
+                echo "panel de Cloudflare: este script no pisa un registro ajeno." >&2
+                exit 1 ;;
+        esac
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 6. El nombre publico de Nextcloud.
+#
+# Nextcloud rechaza con "Access through untrusted domain" cualquier Host que
+# no este en trusted_domains, y no sirve ni la pantalla de inicio.
+#
+# La variable NEXTCLOUD_TRUSTED_DOMAINS del docker-compose.yml alcanza para
+# una instalacion NUEVA: la imagen la aplica al instalar y despues no la mira
+# mas. Sobre la instancia que ya esta instalada hay que escribirlo con occ, y
+# queda en config.php adentro del volumen, asi que sobrevive a recrear el
+# contenedor.
+# -----------------------------------------------------------------------------
+if docker ps --format "{{.Names}}" 2>/dev/null | grep -qx restoya_nextcloud; then
+    ocupado=$(docker exec -u www-data restoya_nextcloud \
+        php occ config:system:get trusted_domains 2>/dev/null || true)
+    if echo "$ocupado" | grep -qx "$DOMINIO_NUBE"; then
+        registro "Nextcloud ya confia en $DOMINIO_NUBE."
+    else
+        # El indice 1 va despues de localhost, que es el 0.
+        if docker exec -u www-data restoya_nextcloud \
+            php occ config:system:set trusted_domains 1 --value="$DOMINIO_NUBE" > /dev/null 2>&1; then
+            registro "Nextcloud ahora confia en $DOMINIO_NUBE."
+        else
+            echo "No se pudo escribir trusted_domains en Nextcloud." >&2
+            echo "A mano:  docker exec -u www-data restoya_nextcloud php occ config:system:set trusted_domains 1 --value=$DOMINIO_NUBE" >&2
+        fi
+    fi
 else
-    case "$salida" in
-        *"already configured"*|*"already exists"*|*"record with that host"*)
-            registro "El registro ya existia y apunta a este tunel." ;;
-        *)
-            echo "No se pudo dar de alta el DNS:" >&2
-            echo "$salida" | sed 's/^/    /' >&2
-            echo >&2
-            echo "Si el nombre ya apunta a otra cosa, hay que resolverlo a mano en el" >&2
-            echo "panel de Cloudflare: este script no pisa un registro ajeno." >&2
-            exit 1 ;;
-    esac
+    registro "Nextcloud no esta levantado: cuando lo levantes, volve a correr este script."
 fi
 
 echo
@@ -166,8 +234,16 @@ echo
 echo "Para bajarla:"
 echo "    cd infra/compose && docker compose --profile tunel down"
 echo
-echo "Quedara en:  https://$DOMINIO"
+echo "Quedara publicado:"
+echo "    aplicacion   https://$DOMINIO"
+echo "    n8n          https://$DOMINIO_N8N"
+echo "    Mantis       https://$DOMINIO_MANTIS"
+echo "    Nextcloud    https://$DOMINIO_NUBE"
+echo "    Grafana      https://$DOMINIO_GRAFANA"
 echo
-echo "Lo unico publicado es la aplicacion. pgAdmin, Grafana, Prometheus,"
-echo "Mantis, Nextcloud, n8n y la base NO estan en el ingress, a proposito:"
-echo "ver el cuadro en infra/tunel/config.plantilla.yml."
+echo "NO se publican pgAdmin, Prometheus, Alertmanager, Mailpit ni la base."
+echo "La diferencia es que esos cinco no piden credencial ninguna; ver el"
+echo "cuadro en infra/tunel/config.plantilla.yml."
+echo
+echo "Y de las cuatro herramientas publicadas, la clave pasa a ser lo unico"
+echo "que las separa de Internet. Hallazgo 18 de docs/09-seguridad.md."

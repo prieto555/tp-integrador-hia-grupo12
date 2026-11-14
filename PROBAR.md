@@ -260,6 +260,59 @@ for r in / /metrics /api-docs; do printf "%-12s " "$r"; curl -s "https://restoya
 devuelven el `index.html` de la SPA: **no están protegidos, están fuera del
 camino**, y conviene decirlo con esas palabras.
 
+### Y los cuatro subdominios de las herramientas
+
+```bash
+for h in restoya n8n mantis nube grafana; do
+  printf "%-10s " "$h"
+  curl -s -o /dev/null -w "%{http_code}  CF-RAY=%header{cf-ray}\n" "https://$h.liners-panel.com/"
+done
+```
+
+**Tenés que ver (medido):**
+
+```
+restoya    200  CF-RAY=a5a9b310ffc49294-EZE
+n8n        302  CF-RAY=a5a9b313fdd8bc07-EZE
+mantis     302  CF-RAY=a5a9b3160d81fafe-EZE
+nube       302  CF-RAY=a5a9b3186c8b684e-EZE
+grafana    302  CF-RAY=a5a9b3219ab19b0c-EZE
+```
+
+**El 302 de las cuatro herramientas es lo correcto, no un problema:** cada
+una redirige a su pantalla de ingreso. Y lo que hay que mirar es **a dónde**,
+porque ahí se ve si la herramienta sabe cómo se llama:
+
+```bash
+for h in n8n mantis nube grafana; do
+  printf "%-8s -> " "$h"
+  curl -s -o /dev/null -w "%{http_code} %header{location}\n" "https://$h.liners-panel.com/"
+done
+```
+
+**Tenés que ver (medido):**
+
+```
+n8n      -> 302 https://raspy-bush-a7b1.cloudflareaccess.com/cdn-cgi/access/login/...
+mantis   -> 302 https://mantis.liners-panel.com/login_page.php
+nube     -> 302 https://nube.liners-panel.com/login
+grafana  -> 302 /login
+```
+
+Dos cosas para saber explicar:
+
+- **n8n no redirige a n8n**: redirige a **Cloudflare Access**, que pide correo
+  *antes* de que la petición entre al túnel. Es la mitigación del hallazgo 18
+  y las otras tres **no la tienen**.
+- **Mantis redirige a su propio nombre público**, no a `localhost:8089`. Si
+  alguna vez ves `localhost` ahí, es que falta `DOMINIO_MANTIS` en el
+  `.env`: cada herramienta arma sus enlaces absolutos con lo que le dice esa
+  variable.
+
+Si Nextcloud contesta **"Access through untrusted domain"**, volvé a correr
+`./infra/tunel/preparar-tunel.sh` con Nextcloud levantado: su nombre público
+hay que escribirlo con `occ` adentro del contenedor.
+
 > **La prueba que falta:** abrirlo desde el celular **con datos móviles**, no
 > con el WiFi de casa.
 
@@ -280,6 +333,72 @@ Después abrí **http://127.0.0.1:3001** (Grafana) y el tablero de RestoYa.
 
 > ⚠️ **Abrilo con tiempo.** Grafana sólo dibuja los paneles que entran en
 > pantalla: si lo abrís en el momento, se ve negro.
+
+### La prueba que pide la consigna: se cae un contenedor, llega un correo
+
+Es la cadena más larga del trabajo —Prometheus, Alertmanager, n8n, Mantis y
+el servidor de correo— así que conviene correrla entera y con tiempo: **del
+`docker stop` al correo pasan poco más de dos minutos.**
+
+```bash
+# 1. Tirar un contenedor que Prometheus vigile. cadvisor es el mas inofensivo:
+#    solo deja de haber metricas de contenedores mientras esta abajo.
+date "+%H:%M:%S" && docker stop restoya_cadvisor
+```
+
+```bash
+# 2. Al minuto y medio, la alerta tiene que estar en firing.
+curl -s "http://127.0.0.1:9090/api/v1/alerts" \
+  | node -e 'let b="";process.stdin.on("data",d=>b+=d).on("end",()=>{for(const a of JSON.parse(b).data.alerts)console.log(a.labels.alertname,a.labels.instance,a.state)})'
+```
+
+**Tenés que ver (medido):** `ObjetivoCaido cadvisor:8080 firing`. Antes del
+minuto está en `pending`, que es el `for: 1m` de la regla.
+
+```bash
+# 3. El correo, en el buzon.
+curl -s "http://127.0.0.1:8025/api/v1/messages?limit=3" \
+  | node -e 'let b="";process.stdin.on("data",d=>b+=d).on("end",()=>{const j=JSON.parse(b);console.log("total:",j.total);j.messages.forEach(m=>console.log(" -",m.Created,"|",m.Subject))})'
+```
+
+**Tenés que ver (medido):**
+
+```
+total: 3
+ - 2026-11-14T23:03:10.663Z | [CRITICA] contenedores no responde
+```
+
+Y adentro, la incidencia que F01 abrió en Mantis por la misma caída:
+
+```
+Se abrio la incidencia #25 en Mantis.
+Alerta: ObjetivoCaido
+Servicio: contenedores
+Ver: https://mantis.liners-panel.com/view.php?id=25
+```
+
+```bash
+# 4. Levantarlo y comprobar que NO llega un segundo correo.
+docker start restoya_cadvisor
+# cinco minutos despues:
+docker logs restoya_receptor_alertas --since 10m | grep -o '"status":"resolved"'
+```
+
+**Tenés que ver (medido):** el `"status":"resolved"` en el registro del
+receptor —o sea que el aviso de resuelto **sí** llegó— y el buzón **con la
+misma cantidad de correos que antes**. Una alerta que se resolvió no es una
+urgencia y no tiene que mandar nada.
+
+> **Ese último paso es el que encontró dos defectos el 14/11**, y vale saberlo
+> porque es la clase de cosa que preguntan. El correo decía
+> `[CRITICA] backend no responde` **cuando el backend estaba perfecto**: el
+> flujo leía el estado del lote en vez del de cada alerta, y describía el
+> aviso con la primera de las cuatro que venían adentro. Está contado en
+> [`docs/14-automatizacion.md`](docs/14-automatizacion.md).
+
+> **El correo va a un buzón local (Mailpit), no a Gmail.** Es un envío real
+> por SMTP; lo único que no es definitivo es el destino, porque mandar a Gmail
+> exige una contraseña de aplicación y eso no puede entrar al repositorio.
 
 ---
 
@@ -363,6 +482,57 @@ curl -s -o /dev/null -w "GET /api/usuarios sin token -> %{http_code}\n" http://1
 
 **Tenés que ver (medido):** **`401`**. Esa es la diferencia exacta que hay que
 poder explicar: cinco archivos de rutas no importan el middleware y el resto sí.
+
+### El límite de peticiones de nginx
+
+Sesenta peticiones seguidas a la API, lo más rápido que las manda curl:
+
+```bash
+A=""; for i in $(seq 1 60); do A="$A -o /dev/null http://127.0.0.1:8080/api/roles"; done
+curl -s -w "%{http_code}\n" $A | sort | uniq -c
+```
+
+**Tenés que ver (medido):**
+
+```
+     22 200
+     38 429
+```
+
+Las 22 que pasan son el arranque (`burst=20`) más las que entran por el ritmo
+de 10 r/s mientras corre la prueba. Y queda en el registro de nginx con la
+zona por nombre:
+
+```bash
+docker logs restoya_frontend --since 2m | grep limiting | head -1
+```
+
+```
+[warn] limiting requests, excess: 20.690 by zone "api", client: 172.24.0.1,
+       request: "GET /api/roles HTTP/1.1"
+```
+
+**Y la otra mitad de la prueba, que es la que importa:** que no corte a quien
+no hizo nada.
+
+```bash
+A=""; for i in $(seq 1 25); do A="$A -o /dev/null http://127.0.0.1:8080/"; done
+curl -s -w "%{http_code}\n" $A | sort | uniq -c
+```
+
+**Tenés que ver (medido):** `25 200`. Veinticinco cargas seguidas de la
+página son más de lo que hace una navegación normal, y ninguna se rechaza.
+
+> **Los once intentos de login de más arriba siguen dando diez `401` y un
+> `429`**, y ese `429` lo sigue devolviendo el backend, no nginx. Son dos
+> controles distintos: nginx frena **volumen**, el backend frena **fuerza
+> bruta** contando intentos fallidos por IP en quince minutos. Se verificó
+> después de poner el límite, justamente para no romper una medición que ya
+> estaba documentada.
+
+El detalle de las tres capas —Cloudflare, nginx y el backend— y de lo que
+**no** resuelven está en la sección 19 de
+[`docs/09-seguridad.md`](docs/09-seguridad.md).
 
 ---
 

@@ -16,9 +16,22 @@ global:
   resolve_timeout: 5m
 
 route:
-  # Las alertas que comparten nombre y severidad se juntan en un solo aviso.
-  # Sin esto, si se cae el nodo entero llegan quince correos iguales.
-  group_by: ["alertname", "severidad"]
+  # Las alertas que comparten nombre, severidad E INSTANCIA se juntan en un
+  # solo aviso.
+  #
+  # OJO CON "instance", que se agrego el 14/11 y no es cosmetico. Antes el
+  # group_by era ["alertname", "severidad"], asi que TODAS las ObjetivoCaido
+  # criticas entraban en un mismo grupo y Alertmanager mandaba un solo POST
+  # con varias alertas adentro. El flujo F01 de n8n describe el aviso con la
+  # PRIMERA, de modo que un lote de cuatro -tres resueltas y una activa- mando
+  # un correo sobre un servicio que ya estaba sano y no dijo nada del que
+  # estaba caido.
+  #
+  # Agrupando por instancia, cada aviso trae una sola alerta. Cuesta mas
+  # correos cuando se cae el nodo entero (uno por servicio), y esta bien: seis
+  # servicios caidos son seis incidencias, no una. La regla de inhibicion del
+  # final es la que evita que encima lleguen las de memoria y latencia.
+  group_by: ["alertname", "severidad", "instance"]
   # Espera antes de mandar el primer aviso de un grupo nuevo, por si entran
   # mas alertas del mismo problema.
   group_wait: 30s

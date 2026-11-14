@@ -271,9 +271,79 @@ entero en su registro y responde 204:
 docker logs restoya_receptor_alertas
 ```
 
-**El receptor definitivo es un flujo de n8n** (punto 13), que ya sabe mandar
-correo y abrir un ticket en Mantis (punto 11). Cuando exista se cambia la URL
-en `alertmanager.yml` y este servicio se borra.
+**El receptor definitivo es un flujo de n8n** (punto 13), y **ya existe**: el
+receptor `registro-y-n8n` manda el aviso a los dos lados a la vez, al
+registro y al flujo F01, que abre la incidencia en Mantis y **manda el
+correo**. El servicio del registro no se borró a propósito: es la evidencia
+más simple de que el aviso salió, y no depende de que n8n esté sano.
+
+### E10-06 bis · De un contenedor caído a un correo, medido el 14/11
+
+La consigna pide que **si se cae un contenedor llegue un correo**. Eso cruza
+tres servicios y un flujo, así que se corrió entero, con el reloj:
+
+```
+19:55:22  docker stop restoya_cadvisor
+19:56:39  Prometheus: ObjetivoCaido pasa a pending   (up == 0)
+19:57:39  Prometheus: ObjetivoCaido pasa a firing    (se cumplio el for: 1m)
+20:02:5x  (se reinicio Alertmanager para tomar el group_by nuevo)
+20:03:10  Alertmanager -> receptor-alertas (204) y -> n8n /webhook/alerta
+20:03:10  F01 abre la incidencia #25 en Mantis y manda el correo
+```
+
+Los cinco minutos entre `firing` y el aviso no son del sistema: es que en el
+medio se reinició Alertmanager para que tomara el `group_by` nuevo, y al
+arrancar el grupo es nuevo y espera su `group_wait` de diez segundos. En una
+caída normal el aviso sale **a los diez segundos** de que la alerta pase a
+`firing`.
+
+Y el correo, leído del buzón:
+
+```
+Asunto: [CRITICA] contenedores no responde
+Fecha:  2026-11-14T23:03:10Z
+
+Se abrio la incidencia #25 en Mantis.
+
+Alerta: ObjetivoCaido
+Servicio: contenedores
+Activa desde: 2026-11-14T22:56:39.977Z
+
+Prometheus no pudo consultar a cadvisor:8080 (trabajo contenedores) durante
+un minuto.
+
+Ver: https://mantis.liners-panel.com/view.php?id=25
+```
+
+Al levantar cadvisor de nuevo, Alertmanager mandó el aviso de resuelto —está
+en el registro del receptor, `"status":"resolved"`— y **no llegó ningún
+correo**, que es exactamente lo que tiene que pasar: una alerta que se
+resolvió no es una urgencia.
+
+> **El correo va a un buzón local (Mailpit), no a Gmail, y conviene decirlo
+> antes de que lo pregunten.** Es un envío real por SMTP: n8n se conecta a un
+> servidor de correo, entrega el mensaje y el servidor lo acepta. Lo único
+> que no es definitivo es el destino, porque mandar a Gmail exige una
+> contraseña de aplicación y eso es un secreto que no puede entrar al
+> repositorio. Cambiar el destino es cambiar una credencial en n8n; el camino
+> ya está probado.
+
+**Esta corrida encontró dos defectos**, y los dos están contados en
+[`14-automatizacion.md`](14-automatizacion.md): el flujo leía el estado del
+lote en vez del de cada alerta, y Alertmanager agrupaba de más. El segundo se
+arregló acá, en `alertmanager.yml`:
+
+```yaml
+# antes: todas las ObjetivoCaido criticas en un solo grupo
+group_by: ["alertname", "severidad"]
+
+# ahora: un grupo por instancia, asi cada aviso trae UNA alerta
+group_by: ["alertname", "severidad", "instance"]
+```
+
+Cuesta más correos cuando se cae el nodo entero —uno por servicio— y está
+bien: **seis servicios caídos son seis incidencias, no una.** La regla de
+inhibición es la que evita que encima lleguen las de memoria y de latencia.
 
 ### Reglas de inhibición
 

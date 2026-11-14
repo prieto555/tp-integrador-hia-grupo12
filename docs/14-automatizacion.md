@@ -111,6 +111,75 @@ Alertmanager ──POST──► n8n ──► validar ──► ¿crítica y ac
 | Si Mantis no responde, **se abre igual** | Entre una incidencia duplicada y una caída sin registrar, el duplicado es el error barato |
 | Siempre se responde 200 a Alertmanager | Si no, reintenta, y el problema se multiplica |
 
+#### Los dos defectos que encontró la prueba del 14/11
+
+Corriendo la prueba de punta a punta —parar un contenedor y esperar el
+correo— pasó esto:
+
+```
+Asunto: [CRITICA] backend no responde
+Fecha:  2026-11-14T22:59:10Z
+```
+
+**El backend estaba perfecto.** Se había caído cinco minutos antes, durante
+un reinicio del stack, y ya se había recuperado. El contenedor que estaba
+caído en ese momento era cadvisor, y de ése el correo no decía nada.
+
+Eran dos defectos encadenados, y ninguno se ve leyendo el flujo de a un nodo:
+
+**1. El flujo leía el estado del LOTE, no el de cada alerta.** Alertmanager
+agrupa y manda **un** POST con varias alertas adentro:
+
+```json
+{ "status": "firing",
+  "alerts": [ { "status": "resolved", "labels": { "job": "backend" } },
+              { "status": "firing",   "labels": { "job": "contenedores" } },
+              { "status": "resolved", "labels": { "job": "postgres" } } ] }
+```
+
+El `status` de arriba vale `firing` si **al menos una** está activa. El nodo
+*Validar y normalizar* copiaba ese valor a cada alerta:
+
+```javascript
+// antes
+estado: cuerpo.status,
+
+// ahora
+estado: a.status || cuerpo.status,
+```
+
+Con el valor de arriba, **tres alertas ya resueltas entraban al filtro de
+críticas como si estuvieran activas**, y cada una abría incidencia y mandaba
+correo. Un carácter de diferencia entre avisar de una caída y avisar de una
+caída que ya pasó.
+
+**2. El aviso quedaba descrito por la primera alerta del lote.** Los nodos
+siguientes usan `$('...').first()`, así que de las cuatro alertas del lote
+el correo describía la primera —la del backend, resuelta— y las otras tres no
+aparecían en ninguna parte.
+
+Esto **no** se arregló en el flujo. Se arregló en `alertmanager.yml`,
+agrupando también por instancia, de modo que cada aviso trae una sola alerta
+y `.first()` es correcto. Es menos código y además es mejor comportamiento:
+una caída de cadvisor y una del backend no son la misma noticia.
+
+La dependencia quedó escrita **en los dos archivos**, porque es de esas que
+se rompen en silencio: si alguien saca `instance` del `group_by`, el flujo
+vuelve a describir un lote con su primer elemento y nadie se entera hasta la
+próxima caída.
+
+**Cómo se verificó el arreglo.** Se paró cadvisor de nuevo: llegó **un**
+correo, `[CRITICA] contenedores no responde`, con la incidencia #25 de
+Mantis. Al levantarlo, Alertmanager mandó el aviso de resuelto —consta en el
+registro del receptor— y **no llegó ningún correo**. El detalle con los
+tiempos está en [`08-monitoreo.md`](08-monitoreo.md), sección E10-06 bis.
+
+> **Por qué esto no se vio antes.** Las pruebas anteriores paraban **un solo**
+> servicio, y con un solo servicio caído el lote trae una sola alerta: el
+> estado del lote y el de la alerta coinciden, y `.first()` es la única que
+> hay. Los dos defectos sólo aparecen cuando se caen **dos cosas en pocos
+> minutos**, que es justamente lo que pasa de verdad cuando algo se rompe.
+
 ### F02 — ¿La copia sirve?
 
 [`02-verificacion-de-copias.json`](../infra/automatizacion/flujos/02-verificacion-de-copias.json)
