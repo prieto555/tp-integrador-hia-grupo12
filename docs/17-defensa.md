@@ -154,7 +154,9 @@ cinco de un frente que no es el suyo, sin leer.
    que se restaura.
 
 9. **Mostrame el cliente de administración de la base.**
-   pgAdmin 9.8, en `127.0.0.1:5050`, con el servidor ya registrado desde
+   pgAdmin 9.8, en `127.0.0.1:5050` —en esta notebook, `5150`, porque Windows
+   se quedó con el 5050 el 16/11; el puerto sale de `PGADMIN_PORT`—, con el
+   servidor ya registrado desde
    `pgadmin-servers.json` —se conecta por el nombre `db` de la red interna de
    Docker, no por `localhost`— y la captura
    [`capturas/61-pgadmin-conectado.png`](capturas/61-pgadmin-conectado.png) lo
@@ -413,7 +415,7 @@ documentadas, y eso es lo que se defiende.
    **no tiene inicio de sesión**, y `MASTER_PASSWORD_REQUIRED: "False"` saca
    también la clave maestra, así que la clave de la base que pgAdmin guardó en
    su volumen tampoco está protegida: al hacer doble clic, conecta solo. Quien
-   llegue al puerto 5050 no obtiene una herramienta, obtiene **una sesión ya
+   llegue a ese puerto no obtiene una herramienta, obtiene **una sesión ya
    abierta como `restoya`** sobre 30 millones de filas. Lo contiene lo mismo
    que a n8n: está en `127.0.0.1` y **fuera del *ingress*** del túnel. Es el
    mismo error que el hallazgo 15 —credenciales configuradas que nadie exige—

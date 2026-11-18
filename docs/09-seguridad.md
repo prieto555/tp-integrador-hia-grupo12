@@ -608,6 +608,15 @@ O sea que quien llegue al puerto 5050 no obtiene *una herramienta* para
 administrar la base: obtiene **una sesión ya abierta como `restoya`** sobre
 30 millones de filas, con el editor de SQL incluido.
 
+> **El 5050 es el valor por omisión, no una constante: sale de `PGADMIN_PORT`.**
+> En la notebook donde se escribió esto hubo que moverlo al **5150** el
+> 16/11, porque Windows se quedó con el 5050 (está contado en la tabla de
+> problemas de [`INSTALACION.md`](../INSTALACION.md)). Si repetís la medición
+> y te da *connection refused*, mirá qué dice `PGADMIN_PORT` antes de concluir
+> que pgAdmin está cerrado: **el hallazgo es que no pide credenciales**, y eso
+> no cambia con el número de puerto. Comprobado de nuevo el 16/11 contra el
+> 5150: `/browser/ -> 200` sin ninguna cookie.
+
 **Lo que lo contiene hoy, y es lo mismo que contiene a n8n:** el puerto se
 publica en `127.0.0.1` y **no está en el *ingress* del túnel** (ver
 [`15-publicacion.md`](15-publicacion.md) §3, donde pgAdmin figura
