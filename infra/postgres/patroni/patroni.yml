@@ -1,0 +1,89 @@
+# Plantilla compartida por los tres nodos.
+#
+# Lo que cambia por nodo -el nombre y las direcciones- NO va aca adentro:
+# Patroni lo lee de variables PATRONI_* que el compose define por servicio.
+# Patroni no sustituye ${VAR} dentro del YAML, asi que este archivo es
+# generico a proposito.
+
+# "scope" es el nombre del cluster dentro de etcd. Es DISTINTO del que usa el
+# TP de Cluster-db (pg-cluster) para que los dos puedan convivir en la misma
+# maquina sin que un nodo se crea parte del cluster equivocado.
+scope: restoya-cluster
+namespace: /db/
+
+restapi:
+  # El puerto 8008 es como HAProxy pregunta "sos el primario?" y "sos replica?".
+  # Sin esta API no hay forma de enrutar: el balanceador no adivina roles.
+  listen: 0.0.0.0:8008
+
+etcd3:
+  hosts: etcd:2379
+
+bootstrap:
+  dcs:
+    # ttl: cuanto dura el "contrato de liderazgo" en etcd. Si el primario no lo
+    # renueva en 30 s, el liderazgo queda vacante y los demas pueden competir.
+    # Bajarlo acelera el failover y aumenta las promociones en falso por una
+    # pausa de red; 30 s es el valor que recomienda Patroni.
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    # Cuanto puede estar atrasada una replica y aun asi ser candidata: 1 MB de
+    # WAL. Una replica muy atrasada no deberia ganar la eleccion, porque
+    # promoverla pierde mas transacciones.
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 128MB
+        # Valores DELIBERADAMENTE chicos, y hay que saber explicar por que.
+        #
+        # El primer intento (17/11) copio los del nodo simple: 512 MB de
+        # shared_buffers y 2 GB de effective_cache_size. Con tres nodos eso es
+        # 1,5 GB solo en buffers, mas el nodo simple y su replica, encima de
+        # los otros 23 contenedores. En una notebook de 15,8 GB el motor de
+        # Docker se murio y se llevo todo.
+        #
+        # Este cluster NO es donde se miden las consultas del punto 5 -eso se
+        # hace contra el nodo simple, que si tiene memoria de verdad-. Aca lo
+        # que se demuestra es la eleccion de lider, y para eso 128 MB sobran.
+        shared_buffers: 128MB
+        work_mem: 8MB
+        maintenance_work_mem: 128MB
+        effective_cache_size: 512MB
+        max_wal_size: 1GB
+        log_min_duration_statement: 500
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  pg_hba:
+    # OJO: este nombre de usuario tiene que ser EL MISMO que
+    # PATRONI_REPLICATION_USERNAME del compose, que sale de REPLICACION_USER
+    # del .env (por omision "replicador"). Patroni NO sustituye variables
+    # dentro de este archivo, asi que la coincidencia es a mano.
+    #
+    # Si no coinciden, el sintoma no dice nada del nombre: el lider arranca
+    # bien y los otros dos quedan en bucle con
+    #   "no pg_hba.conf entry for replication connection ... user X"
+    # Y como bootstrap.pg_hba solo se aplica AL CREAR el cluster, corregirlo
+    # despues no alcanza: hay que borrar los volumenes y volver a empezar.
+    - host replication replicador 0.0.0.0/0 scram-sha-256
+    - host all all 0.0.0.0/0 scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:5432
+  # Un subdirectorio del volumen, no el volumen entero: initdb exige un
+  # directorio vacio y el punto de montaje nunca lo esta (Docker le deja al
+  # menos los permisos y, en Windows, metadatos).
+  data_dir: /var/lib/postgresql/data/pgdata
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false

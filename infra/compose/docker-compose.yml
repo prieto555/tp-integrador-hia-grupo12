@@ -189,13 +189,20 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       # El host es el nombre del servicio: se habla por la red interna.
-      DB_HOST: db
-      DB_PORT: 5432
+      #
+      # Son variables, no valores fijos, por el perfil "failover": ahi la
+      # base deja de ser un contenedor y pasa a ser el balanceador, que
+      # enruta al nodo que sea primario en ese momento.
+      #
+      #   simple   -> DB_HOST=db          DB_PORT=5432
+      #   failover -> DB_HOST=pgbalanceador  DB_PORT=5000
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
       # Lecturas historicas del tablero contra la replica (punto 6). Si el
       # perfil "replica" no esta levantado, el nombre no resuelve y la
       # aplicacion cae sola al primario: no hace falta tocar nada.
       DB_REPLICA_HOST: ${DB_REPLICA_HOST:-db-replica}
-      DB_REPLICA_PORT: 5432
+      DB_REPLICA_PORT: ${DB_REPLICA_PORT:-5432}
       DB_DIALECT: postgres
       # El arranque no toca el esquema. Ver docs/07-optimizacion-sql.md:
       # sync({alter:true}) recreaba las claves foraneas en cada arranque.
@@ -715,6 +722,137 @@ services:
     #
     # Si nginx no esta arriba, Cloudflare devuelve 502 hasta que lo este.
 
+  # ===========================================================================
+  # PUNTO 6 (modo alta disponibilidad) — Cluster con FAILOVER AUTOMATICO.
+  #
+  #   docker compose --profile app --profile failover up -d
+  #
+  # Convive con el par simple db + db-replica y NO lo reemplaza: son dos
+  # respuestas distintas al mismo punto y se defienden las dos.
+  #
+  #   db + db-replica  -> replicacion, promocion A MANO.
+  #   pg1/pg2/pg3      -> replicacion + eleccion de lider automatica.
+  #
+  # La diferencia no es "uno es mejor": es que el segundo agrega un almacen
+  # de consenso (etcd). Sin consenso, promover solo es peligroso — si el
+  # primario no estaba caido sino incomunicado, quedan dos nodos aceptando
+  # escrituras. Patroni lo evita porque un nodo que no puede confirmar con
+  # etcd que es el lider SE NIEGA A ESCRIBIR.
+  # ===========================================================================
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: restoya_etcd
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      ETCD_NAME: etcd
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: restoya-etcd
+      # Sin esto, etcd 3.5 rechaza el acceso sin TLS desde otros contenedores.
+      ALLOW_NONE_AUTHENTICATION: "yes"
+    volumes:
+      - etcd_data:/etcd-data
+    command: ["etcd", "--data-dir=/etcd-data"]
+    networks:
+      - interna
+
+  pg1:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg1
+    hostname: pg1
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg1
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg1:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg1:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg1:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pg2:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg2
+    hostname: pg2
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg2
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg2:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg2:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg2:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pg3:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg3
+    hostname: pg3
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg3
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg3:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg3:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg3:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pgbalanceador:
+    image: haproxy:2.9-alpine
+    container_name: restoya_pgbalanceador
+    profiles: ["failover"]
+    restart: unless-stopped
+    volumes:
+      - ../postgres/patroni/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      # Escritura, lectura y el panel de estado. Solo en 127.0.0.1.
+      - "127.0.0.1:${CLUSTER_PORT_ESCRITURA:-5600}:5000"
+      - "127.0.0.1:${CLUSTER_PORT_LECTURA:-5601}:5001"
+      - "127.0.0.1:${CLUSTER_PORT_PANEL:-7100}:7000"
+    networks:
+      - interna
+    depends_on:
+      - pg1
+      - pg2
+      - pg3
+
 networks:
   interna:
     name: restoya_interna
@@ -740,6 +878,10 @@ volumes:
     name: restoya_pgdata
   pgadmin_data:
     name: restoya_pgadmin_data
+  pgdata_pg1:
+  pgdata_pg2:
+  pgdata_pg3:
+  etcd_data:
   pgdata_replica:
     name: restoya_pgdata_replica
   prometheus_data:
