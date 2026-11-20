@@ -220,11 +220,22 @@ const recibirWebhookMP = async (req, res) => {
 // obtenerPagos
 const obtenerPagos = async (req, res) => {
   try {
+    // Mismo caso que el listado de usuarios: sin LIMIT esto traia los
+    // 6.000.000 de pagos CON su pedido y su caja incluidos, y el proceso se
+    // quedaba sin memoria antes de contestar. La peticion se veia como un 502
+    // de nginx, que es lo que confunde: parece que el backend no esta, cuando
+    // en realidad lo mato la consulta.
+    //
+    // Los mas recientes primero, que es lo que mira un cajero.
+    const limite = Math.min(parseInt(req.query.limite, 10) || 100, 500);
+
     const pagos = await Pago.findAll({
       include: [
         { model: Pedido, as: "pedido" },
         { model: Caja, as: "caja" }
-      ]
+      ],
+      order: [["fechaPago", "DESC"]],
+      limit: limite
     });
     res.json(pagos);
   } catch (error) {

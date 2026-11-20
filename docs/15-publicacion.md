@@ -73,39 +73,140 @@ quién lo cambió y cuándo.
 
 ## 3 · Qué se publica, y sobre todo qué no
 
-Se publica **una sola cosa**: la aplicación, a través de nginx, que sirve el
-frente y hace de *proxy* de `/api/`. Con esa única regla queda publicada la
-aplicación completa, porque el backend ya está detrás de nginx y no publica
-puerto.
+> **Esto cambió el 14/11, y el cambio es la parte interesante del punto.**
+> Hasta esa fecha se publicaba **una sola cosa**, la aplicación, y las nueve
+> herramientas quedaban afuera con el argumento que está más abajo. Ahora se
+> publican **cinco nombres**. No porque el argumento fuera malo, sino porque
+> el equipo necesita entrar a n8n, a Mantis y a Nextcloud desde sus casas
+> para preparar la defensa, y la alternativa —que cada uno levante el stack
+> completo en su máquina— no es alternativa: son 23 contenedores y 6.000.000
+> de filas.
+>
+> Lo que importa para la defensa no es qué se eligió, es **que el criterio
+> esté escrito y que el costo esté anotado**. Las dos cosas están en esta
+> sección y el costo además es el hallazgo 18 de
+> [`09-seguridad.md`](09-seguridad.md).
 
-Deliberadamente **no** se publican, aunque el túnel podría hacerlo con dos
-líneas cada uno:
+### Los cinco nombres publicados
+
+| Nombre público | Servicio interno | Qué es | Con qué entra |
+|---|---|---|---|
+| `restoya.liners-panel.com` | `frontend:80` | la aplicación (punto 7) | nada: es pública a propósito |
+| `n8n.liners-panel.com` | `n8n:5678` | automatización (punto 13) | cuenta de propietario de n8n |
+| `mantis.liners-panel.com` | `mantis:80` | incidencias (punto 11) | usuario de MantisBT |
+| `nube.liners-panel.com` | `nextcloud:80` | gestión documental (punto 12) | usuario de Nextcloud |
+| `grafana.liners-panel.com` | `grafana:3000` | monitoreo (punto 10) | usuario de Grafana |
+
+**Un solo nivel de subdominio, y no es una preferencia de estilo.** El
+certificado gratuito de Cloudflare (Universal SSL) cubre `liners-panel.com` y
+`*.liners-panel.com`, pero **no** `n8n.restoya.liners-panel.com`: un segundo
+nivel de subdominio no entra en ese comodín. Con dos niveles el navegador
+corta por certificado inválido **antes** de que el túnel entre en juego, así
+que el error no se ve en el registro de `cloudflared` y manda a buscar el
+problema donde no está. `preparar-tunel.sh` avisa si algún nombre tiene más
+de un nivel.
+
+### Lo que sigue sin publicarse
 
 | Servicio | Puerto | Por qué no |
 |---|---|---|
-| pgAdmin | 5050 | consola de la base: con eso se lee y se borra todo |
-| Grafana | 3001 | interfaz administrativa, y muestra la forma interna del sistema |
+| pgAdmin | 5050 | **entra sin ninguna credencial** y ya viene conectado a la base: publicarlo es publicar la base. Hallazgo 17 |
 | Prometheus | 9090 | expone todas las métricas y los destinos, sin autenticación |
-| Alertmanager | 9093 | **permite silenciar alertas**: apagar el monitoreo desde afuera |
-| MantisBT | 8089 | los problemas del sistema, con detalle de cómo explotarlos |
-| Nextcloud | 8081 | la documentación interna del proyecto |
-| n8n | 5678 | tiene adentro las credenciales de Mantis y de Nextcloud |
-| Mailpit | 8025 | buzón sin autenticación |
+| Alertmanager | 9093 | **permite silenciar alertas**: apagar el monitoreo desde afuera, sin autenticación |
+| Mailpit | 8025 | buzón sin autenticación, y tiene los correos de alta de usuarios de Mantis |
 | PostgreSQL | 5433 / 5434 | la base, directamente |
 
-Dos de esos merecen un renglón más:
+**El criterio que separa las dos listas es uno solo: si el servicio pide
+usuario y clave o no.** No es cuánto vale lo que hay adentro —n8n guarda las
+credenciales de Mantis, de Nextcloud y de la base, y es el blanco más valioso
+del sistema— es si hay *algo* entre Internet y el servicio. En los cinco de
+esta lista no hay nada: el primero que llegue al nombre está adentro.
 
-- **Alertmanager** es el peor de la lista y el menos obvio. No sólo muestra:
-  **deja crear silencios**. Alguien con acceso apaga los avisos y después hace
-  lo que quiera sin que nadie se entere.
-- **n8n** es el que más credenciales tiene adentro de todo el sistema, y está
-  conectado a las cuatro redes de Docker. Es el blanco más valioso que hay.
+Dos merecen un renglón más:
+
+- **Alertmanager** es el menos obvio de la lista. No sólo muestra: **deja
+  crear silencios**. Alguien con acceso apaga los avisos y después hace lo que
+  quiera sin que nadie se entere.
+- **pgAdmin** está en modo escritorio (`SERVER_MODE: "False"`), que no es una
+  configuración floja: en ese modo pgAdmin **no tiene pantalla de ingreso**, y
+  encima trae la conexión a la base guardada. Es el hallazgo 17 y es la razón
+  por la que no se publica aunque sería la herramienta más cómoda de tener a
+  mano.
+
+### Qué se perdió al publicar las cuatro herramientas
+
+Antes había **dos** cosas entre cada herramienta e Internet: la credencial, y
+el hecho de que el puerto sólo escuchaba en `127.0.0.1`. Ahora hay **una**.
+
+Dicho sin vueltas: **la clave de cada herramienta pasó a ser lo único que la
+separa de cualquiera que sepa el nombre**. Y los nombres no son secretos: los
+certificados que emite Cloudflare se publican en los registros de
+*Certificate Transparency*, que son públicos y consultables. Nadie tiene que
+adivinar `n8n.liners-panel.com`; está en una lista.
+
+Lo que corresponde hacer con eso, por orden de lo que cuesta:
+
+1. **Claves largas y distintas en las cuatro.** Es lo único que hoy sostiene
+   la publicación. Están en el `.env`, que no se versiona.
+2. **Cloudflare Access** por delante de los subdominios de herramientas.
+   Agrega una pantalla de ingreso por correo *antes* de que el tráfico llegue
+   al túnel: la herramienta no ve ni una petición de alguien sin autorizar.
+   **n8n ya la tiene** —viene del trabajo anterior de n8n y se comprobó al
+   publicar: pedir la raíz redirige a `cloudflareaccess.com`—. Mantis,
+   Nextcloud y Grafana **no**. Falta sumarles los tres dominios a la
+   aplicación de Access que ya existe: ver el hallazgo 18.
+3. **Bajar el túnel cuando no se está usando** (`--profile tunel down`), que
+   es lo que hay que hacer después de la entrega mientras D-01 siga abierto.
+
+### Lo que hubo que tocar además del túnel
+
+Agregar una regla al *ingress* publica el puerto, pero **no** hace que la
+herramienta funcione bien en su nombre nuevo. Cada una arma enlaces absolutos
+y hay que decirle cuál es su nombre público, o los enlaces apuntan a
+`localhost`, que del lado del visitante no existe:
+
+| Herramienta | Qué se le dijo | Qué pasa si no |
+|---|---|---|
+| MantisBT | `MANTIS_URL` → `$g_path` en `config_inc.php` | los enlaces de los correos de notificación y el redirigido después de entrar van a `localhost:8089` |
+| Grafana | `GF_SERVER_ROOT_URL`, `GF_SERVER_DOMAIN` | entrar termina en una redirección a `localhost:3001` |
+| n8n | `WEBHOOK_URL`, `N8N_EDITOR_BASE_URL`, `N8N_PROTOCOL` | el editor muestra direcciones de *webhook* que no son alcanzables desde afuera, y el flujo F01 no se puede probar |
+| Nextcloud | `trusted_domains`, `OVERWRITEHOST`, `OVERWRITEPROTOCOL` | responde **"Access through untrusted domain"** y no sirve ni la pantalla de inicio |
+
+Las cuatro salen de las mismas variables del `.env` que usa el túnel, así que
+no puede pasar que el túnel publique un nombre y la herramienta crea que se
+llama otro.
+
+**El caso de Nextcloud tiene una trampa.** La variable
+`NEXTCLOUD_TRUSTED_DOMAINS` del `docker-compose.yml` la aplica la imagen
+**sólo durante la instalación**; sobre una instancia ya instalada se lee y se
+ignora. Como la nuestra ya estaba instalada, el nombre público hay que
+escribirlo con `occ`, y queda en `config.php` adentro del volumen:
+
+```bash
+docker exec -u www-data restoya_nextcloud \
+    php occ config:system:set trusted_domains 1 --value=nube.liners-panel.com
+```
+
+Eso lo hace solo el paso 6 de `preparar-tunel.sh`, y es idempotente.
+
+### Y una que no es de configuración sino de red
+
+El conector del túnel estaba **sólo en la red `interna`**, que es donde vive
+`frontend`. Pero Mantis está en `incidencias`, Nextcloud en `documental` y n8n
+en `automatizacion`: redes separadas a propósito, para que un problema en una
+herramienta no alcance a las otras.
+
+Con la regla del *ingress* puesta y sin la red, Cloudflare devuelve **502**:
+el conector no llega al servicio. Así que `cloudflared` ahora está en las
+cuatro redes. Vale aclararlo porque suena peor de lo que es: **estar en una
+red no publica nada**. Lo que se publica es lo que está en el *ingress*, que
+es el archivo que se revisa en el *pull request*. La red es condición
+necesaria, no suficiente.
 
 Y lo que hace que esta lista sea una garantía y no una intención: **el túnel no
 abre puertos en el router**. El conector sale hacia Cloudflare. Lo que no está
 en el archivo de configuración **no es alcanzable desde Internet**, y no hay
 forma de equivocarse dejando un puerto abierto.
-
 ### La regla final, que es la que importa
 
 ```yaml
@@ -153,17 +254,42 @@ No se versiona y no se copia a ningún lado. Al contenedor no entra.
 `cloudflared` ya está instalado en esta máquina, en
 `C:\Program Files (x86)\cloudflared\` y en el PATH.
 
-### 5.2 · Decir cuál es el nombre público
+### 5.2 · Decir cuáles son los nombres públicos
 
 En `infra/compose/.env`:
 
 ```
 DOMINIO_PUBLICO=restoya.midominio.com
 TUNEL_NOMBRE=restoya
+
+ESQUEMA_PUBLICO=https
+DOMINIO_N8N=n8n.midominio.com
+DOMINIO_MANTIS=mantis.midominio.com
+DOMINIO_NUBE=nube.midominio.com
+DOMINIO_GRAFANA=grafana.midominio.com
 ```
 
-`DOMINIO_PUBLICO` tiene que ser un subdominio de **la zona que se autorizó en
-el paso anterior**: el certificado se emite para esa zona.
+Los cinco tienen que ser subdominios de **la zona que se autorizó en el paso
+anterior**: el certificado se emite para esa zona. Y de **un solo nivel**, por
+lo del comodín del certificado que está en la sección 3.
+
+Las cuatro variables de las herramientas **no son opcionales** y el script
+corta si falta alguna. Podría derivarlas de la zona
+(`n8n.` + lo que quede de `DOMINIO_PUBLICO`), y a propósito no lo hace: el
+`docker-compose.yml` lee **estas mismas variables** para decirle a cada
+herramienta cuál es su nombre público. Si el script se las inventara, el túnel
+publicaría un nombre y la herramienta armaría sus enlaces con otro — la clase
+de desajuste que no se nota hasta que alguien hace clic en un enlace de un
+correo de Mantis.
+
+Si se dejan vacías, cada herramienta vuelve a su dirección local
+(`localhost:8089`, `localhost:3001`…) y no hay que tocar nada más: son los
+valores por omisión del `docker-compose.yml`. Un clon sin dominio funciona
+exactamente como antes de este cambio.
+
+`ESQUEMA_PUBLICO` existe por eso mismo: es el `http` / `https` con el que se
+arman esos enlaces, y tiene que ser `https` cuando se publica y `http` cuando
+se trabaja en local.
 
 ### 5.3 · Preparar el túnel
 
@@ -171,7 +297,7 @@ el paso anterior**: el certificado se emite para esa zona.
 ./infra/tunel/preparar-tunel.sh
 ```
 
-Es idempotente y hace cuatro cosas:
+Es idempotente y hace cinco cosas:
 
 1. comprueba que exista el certificado de origen;
 2. crea el túnel **sólo si no existe uno con ese nombre** —no toca ningún otro
@@ -179,8 +305,17 @@ Es idempotente y hace cuatro cosas:
    andando para otra cosa—;
 3. copia las credenciales a `infra/tunel/.credenciales.json`, que está en el
    `.gitignore`;
-4. genera `config.generado.yml` desde la plantilla versionada y da de alta el
-   `CNAME` que apunta el nombre al túnel.
+4. genera `config.generado.yml` desde la plantilla versionada y da de alta **un
+   `CNAME` por cada uno de los cinco nombres**;
+5. le escribe a Nextcloud su nombre público con `occ`, que es lo único que no se
+   puede dejar en un archivo de configuración (ver la sección 3). Si Nextcloud
+   no está levantado, avisa y sigue: hay que volver a correr el script después.
+
+Y una comprobación que parece de más y no lo es: si un marcador de la
+plantilla quedara sin reemplazar, el `hostname:` de esa regla quedaría **vacío**,
+y en `cloudflared` una regla con `hostname` vacío **atrapa todo el tráfico**.
+Sería publicar una herramienta interna en el nombre de la aplicación. El
+script corta antes de escribir el archivo.
 
 **Lo que el script no hace es levantar el túnel**, y es a propósito: publicar
 algo en Internet no tiene que ser el efecto secundario de correr un script de

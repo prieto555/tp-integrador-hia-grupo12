@@ -189,13 +189,20 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       # El host es el nombre del servicio: se habla por la red interna.
-      DB_HOST: db
-      DB_PORT: 5432
+      #
+      # Son variables, no valores fijos, por el perfil "failover": ahi la
+      # base deja de ser un contenedor y pasa a ser el balanceador, que
+      # enruta al nodo que sea primario en ese momento.
+      #
+      #   simple   -> DB_HOST=db          DB_PORT=5432
+      #   failover -> DB_HOST=pgbalanceador  DB_PORT=5000
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
       # Lecturas historicas del tablero contra la replica (punto 6). Si el
       # perfil "replica" no esta levantado, el nombre no resuelve y la
       # aplicacion cae sola al primario: no hace falta tocar nada.
       DB_REPLICA_HOST: ${DB_REPLICA_HOST:-db-replica}
-      DB_REPLICA_PORT: 5432
+      DB_REPLICA_PORT: ${DB_REPLICA_PORT:-5432}
       DB_DIALECT: postgres
       # El arranque no toca el esquema. Ver docs/07-optimizacion-sql.md:
       # sync({alter:true}) recreaba las claves foraneas en cada arranque.
@@ -395,6 +402,12 @@ services:
       # Las dos cosas salen a Internet desde un servicio interno: se apagan.
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Grafana arma los enlaces absolutos con root_url: el redirigido
+      # despues de entrar, los de las notificaciones y los de compartir un
+      # tablero. Sin esto, entrar por https://grafana.dominio termina en una
+      # redireccion a localhost:3001, que del lado del visitante no existe.
+      GF_SERVER_ROOT_URL: "${ESQUEMA_PUBLICO:-http}://${DOMINIO_GRAFANA:-localhost:3001}/"
+      GF_SERVER_DOMAIN: ${DOMINIO_GRAFANA:-localhost}
     volumes:
       # La fuente de datos y el tablero vienen del repositorio, no se cargan a
       # mano por la interfaz. Asi se levantan igual en cualquier maquina y se
@@ -448,7 +461,11 @@ services:
     environment:
       MANTIS_DB_PASSWORD: ${MANTIS_DB_PASSWORD}
       MANTIS_SALT: ${MANTIS_SALT:?falta MANTIS_SALT en el .env}
-      MANTIS_URL: http://localhost:${MANTIS_PORT:-8089}/
+      # $g_path de Mantis: ../incidencias/config_inc.php lo lee de aca. Es la
+      # base de TODOS los enlaces absolutos, incluidos los de los correos de
+      # notificacion y el redirigido despues de entrar. Si no coincide con el
+      # nombre por el que se entro, el inicio de sesion manda a otra parte.
+      MANTIS_URL: "${ESQUEMA_PUBLICO:-http}://${DOMINIO_MANTIS:-localhost:8089}/"
       # La carpeta admin/ de Mantis trae el instalador y las herramientas de
       # mantenimiento: con ella publicada, cualquiera que llegue al puerto
       # puede reinstalar. El entrypoint de la imagen la esconde cuando esto
@@ -534,9 +551,19 @@ services:
       NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
       NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?falta NEXTCLOUD_ADMIN_PASSWORD en el .env}
       # Sin esto Nextcloud responde "Access through untrusted domain" y no
-      # sirve ni la pantalla de inicio.
-      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1"
-      OVERWRITEPROTOCOL: http
+      # sirve ni la pantalla de inicio. El nombre publico tiene que estar en
+      # la lista o el subdominio no sirve ni esa pantalla.
+      #
+      # OJO: la imagen aplica esta variable SOLO en la instalacion. Sobre una
+      # instancia ya instalada hay que correr occ, y eso lo hace el paso 6 de
+      # infra/tunel/preparar-tunel.sh.
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost 127.0.0.1 ${DOMINIO_NUBE:-}"
+      # Nextcloud ve una peticion HTTP: el tramo cifrado termina en el
+      # conector del tunel. Si no se le dice con que esquema y nombre lo
+      # alcanzan de verdad, arma los enlaces con http:// y el navegador
+      # bloquea medio panel por contenido mixto.
+      OVERWRITEPROTOCOL: ${ESQUEMA_PUBLICO:-http}
+      OVERWRITEHOST: ${DOMINIO_NUBE:-}
     volumes:
       - nextcloud_datos:/var/www/html
     ports:
@@ -610,9 +637,21 @@ services:
       TZ: America/Argentina/Jujuy
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_RUNNERS_ENABLED: "true"
-      N8N_HOST: localhost
+      N8N_HOST: ${DOMINIO_N8N:-localhost}
       N8N_PORT: 5678
-      WEBHOOK_URL: http://localhost:${N8N_PORT:-5678}/
+      N8N_PROTOCOL: ${ESQUEMA_PUBLICO:-http}
+      # Con esta URL n8n arma las direcciones de los webhooks que muestra en
+      # el editor. El flujo F01 recibe las alertas de Alertmanager por un
+      # webhook: si la URL no es la publica, lo que se copia del editor no es
+      # alcanzable y el flujo no se puede probar desde afuera.
+      WEBHOOK_URL: "${ESQUEMA_PUBLICO:-http}://${DOMINIO_N8N:-localhost:5678}/"
+      N8N_EDITOR_BASE_URL: "${ESQUEMA_PUBLICO:-http}://${DOMINIO_N8N:-localhost:5678}/"
+      # Detras del tunel, n8n ve como origen de cada peticion la IP del
+      # conector, no la del visitante. Con un salto declarado toma la del
+      # visitante de X-Forwarded-For. Es el mismo problema que en el
+      # publicado del backend (docs/15-publicacion.md, seccion 6): sin esto,
+      # cualquier limite por IP cuenta a todo el mundo como uno solo.
+      N8N_PROXY_HOPS: 1
     volumes:
       - n8n_datos:/home/node/.n8n
       # Los scripts que los flujos ejecutan en el host (copias, verificacion).
@@ -656,8 +695,23 @@ services:
       - ../tunel/config.generado.yml:/etc/cloudflared/config.yml:ro
       - ../tunel/.credenciales.json:/etc/cloudflared/credenciales.json:ro
     networks:
-      # Solo la red interna: desde aca se llega a frontend, y a nada de afuera.
+      # El conector tiene que poder ALCANZAR cada servicio que publica, y cada
+      # herramienta vive en su propia red a proposito. Por eso esta en las
+      # cuatro:
+      #
+      #   interna        -> frontend (la aplicacion) y grafana
+      #   incidencias    -> mantis
+      #   documental     -> nextcloud
+      #   automatizacion -> n8n
+      #
+      # Estar en una red NO publica nada. Lo que se publica es lo que esta en
+      # el ingress de infra/tunel/config.plantilla.yml, que es el archivo que
+      # se revisa en el pull request. Pero sin la red, la regla del ingress
+      # devuelve 502: el conector no llega al servicio.
       - interna
+      - incidencias
+      - documental
+      - automatizacion
     # Sin depends_on a proposito. Poner "depends_on: frontend" hace que
     # "docker compose --profile tunel" solo falle con "depends on undefined
     # service", porque frontend vive en el perfil app y Compose exige que la
@@ -667,6 +721,216 @@ services:
     #     docker compose --profile app --profile tunel up -d
     #
     # Si nginx no esta arriba, Cloudflare devuelve 502 hasta que lo este.
+
+  # ===========================================================================
+  # PUNTO 6 (modo alta disponibilidad) — Cluster con FAILOVER AUTOMATICO.
+  #
+  #   docker compose --profile app --profile failover up -d
+  #
+  # Convive con el par simple db + db-replica y NO lo reemplaza: son dos
+  # respuestas distintas al mismo punto y se defienden las dos.
+  #
+  #   db + db-replica  -> replicacion, promocion A MANO.
+  #   pg1/pg2/pg3      -> replicacion + eleccion de lider automatica.
+  #
+  # La diferencia no es "uno es mejor": es que el segundo agrega un almacen
+  # de consenso (etcd). Sin consenso, promover solo es peligroso — si el
+  # primario no estaba caido sino incomunicado, quedan dos nodos aceptando
+  # escrituras. Patroni lo evita porque un nodo que no puede confirmar con
+  # etcd que es el lider SE NIEGA A ESCRIBIR.
+  # ===========================================================================
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: restoya_etcd
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      ETCD_NAME: etcd
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd:2380
+      ETCD_INITIAL_CLUSTER: etcd=http://etcd:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: restoya-etcd
+      # Sin esto, etcd 3.5 rechaza el acceso sin TLS desde otros contenedores.
+      ALLOW_NONE_AUTHENTICATION: "yes"
+    volumes:
+      - etcd_data:/etcd-data
+    command: ["etcd", "--data-dir=/etcd-data"]
+    networks:
+      - interna
+
+  pg1:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg1
+    hostname: pg1
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg1
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg1:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg1:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg1:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pg2:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg2
+    hostname: pg2
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg2
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg2:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg2:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg2:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pg3:
+    build:
+      context: ../postgres/patroni
+    image: restoya-patroni:16
+    container_name: restoya_pg3
+    hostname: pg3
+    profiles: ["failover"]
+    restart: unless-stopped
+    environment:
+      PATRONI_NAME: pg3
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg3:8008
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg3:5432
+      PATRONI_SUPERUSER_USERNAME: ${DB_USER}
+      PATRONI_SUPERUSER_PASSWORD: ${DB_PASSWORD}
+      PATRONI_REPLICATION_USERNAME: ${REPLICACION_USER:-replicador}
+      PATRONI_REPLICATION_PASSWORD: ${REPLICACION_PASSWORD}
+    volumes:
+      - pgdata_pg3:/var/lib/postgresql/data
+      - ../postgres/patroni/patroni.yml:/etc/patroni.yml:ro
+    networks:
+      - interna
+    depends_on:
+      - etcd
+
+  pgbalanceador:
+    image: haproxy:2.9-alpine
+    container_name: restoya_pgbalanceador
+    profiles: ["failover"]
+    restart: unless-stopped
+    volumes:
+      - ../postgres/patroni/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      # Escritura, lectura y el panel de estado. Solo en 127.0.0.1.
+      - "127.0.0.1:${CLUSTER_PORT_ESCRITURA:-5600}:5000"
+      - "127.0.0.1:${CLUSTER_PORT_LECTURA:-5601}:5001"
+      - "127.0.0.1:${CLUSTER_PORT_PANEL:-7100}:7000"
+    networks:
+      - interna
+    depends_on:
+      - pg1
+      - pg2
+      - pg3
+
+  # ---------------------------------------------------------------------
+  # Runner autoalojado de GitHub Actions (punto 8).
+  #
+  # Es la pieza que faltaba para cerrar el despliegue. El trabajo "desplegar"
+  # de entrega.yml pide runs-on: [self-hosted, restoya-produccion], y hasta
+  # ahora quedaba en "skipped" porque no habia ningun runner con esa etiqueta.
+  #
+  # POR QUE AUTOALOJADO Y NO UNO DE GITHUB. La aplicacion no corre en un
+  # servidor alquilado: corre en esta maquina, detras de CGNAT. Un runner de
+  # GitHub no tiene forma de llegar hasta aca. El autoalojado invierte la
+  # direccion: es la maquina la que va a buscar trabajo a GitHub.
+  #
+  # ---- LOS DOS PROBLEMAS QUE RESUELVE ESTA CONFIGURACION ----
+  #
+  # 1. EL SOCKET DE DOCKER. desplegar.sh corre "docker compose pull" y
+  #    "docker compose up", asi que el runner necesita hablarle al demonio de
+  #    Docker. Se le monta el socket del host.
+  #
+  #    Esto NO es gratis y corresponde decirlo: quien pueda escribir en ese
+  #    socket puede arrancar un contenedor privilegiado, o sea que tiene root
+  #    sobre la maquina. Es la razon por la que este servicio esta en su
+  #    propio perfil y no se levanta junto con el resto.
+  #
+  # 2. LAS RUTAS, QUE ES EL QUE NO SE VE VENIR. El runner corre adentro de un
+  #    contenedor, pero los "docker compose" que lanza los ejecuta el demonio
+  #    DEL HOST. Cuando el compose tiene un montaje relativo
+  #    -../postgres/pg_hba.conf, por ejemplo- el cliente lo convierte en una
+  #    ruta absoluta y se la manda al demonio... que la busca en el host.
+  #
+  #    Si el repositorio quedara descargado en /home/runner/_work, el demonio
+  #    buscaria /home/runner/_work/... en el host, no existiria, y el
+  #    despliegue fallaria con un error de montaje que no dice nada.
+  #
+  #    Por eso el directorio de trabajo se monta en la MISMA ruta con la que
+  #    el demonio lo ve. En Docker Desktop sobre Windows, el disco C: aparece
+  #    adentro de la maquina virtual como /run/desktop/mnt/host/c/...
+  #    RUTA_RUNNER_EN_EL_DEMONIO es esa ruta y hay que ajustarla si el
+  #    proyecto se clona en otro lado.
+  # ---------------------------------------------------------------------
+  runner:
+    profiles: ["despliegue"]
+    image: myoung34/github-runner:2.321.0
+    container_name: restoya_runner
+    restart: unless-stopped
+    environment:
+      # Contra que repositorio se registra. Es el repositorio cuyo main se
+      # despliega.
+      RUNNER_SCOPE: repo
+      # OJO: con valor por defecto y NO con ":?". Compose interpola el
+      # archivo ENTERO antes de mirar los perfiles, asi que una variable
+      # obligatoria aca haria fallar "docker compose --profile app config" y
+      # con el la prueba de humo del CI, que no levanta este servicio. Es la
+      # misma leccion que esta escrita en ci.yml.
+      REPO_URL: ${RUNNER_REPO_URL:-}
+      # Token de registro. VENCE A LA HORA: se saca con
+      #   gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token --jq .token
+      # Una vez registrado, el runner guarda su credencial propia y el token
+      # deja de hacer falta.
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_NAME: ${RUNNER_NAME:-restoya-produccion}
+      # La etiqueta que pide entrega.yml. Si no coincide, el trabajo nunca
+      # encuentra runner y queda esperando para siempre.
+      LABELS: restoya-produccion
+      RUNNER_WORKDIR: ${RUTA_RUNNER_EN_EL_DEMONIO:-/run/desktop/mnt/host/c/Users/USER/Proyectos/tp-integrador-hia-grupo13/infra/despliegue/runner-trabajo}
+      # Que no se actualice solo en medio de un despliegue.
+      DISABLE_AUTO_UPDATE: "true"
+      # Al bajar el contenedor, que se de de baja en GitHub en vez de quedar
+      # figurando como desconectado.
+      EPHEMERAL: "false"
+    volumes:
+      # Para poder lanzar docker compose. Ver el punto 1 de arriba.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # El directorio de trabajo, montado en la misma ruta que ve el demonio.
+      # Ver el punto 2 de arriba: esto es lo que hace que los montajes
+      # relativos del compose resuelvan bien durante el despliegue.
+      - ../despliegue/runner-trabajo:${RUTA_RUNNER_EN_EL_DEMONIO:-/run/desktop/mnt/host/c/Users/USER/Proyectos/tp-integrador-hia-grupo13/infra/despliegue/runner-trabajo}
+    networks:
+      - interna
 
 networks:
   interna:
@@ -693,6 +957,10 @@ volumes:
     name: restoya_pgdata
   pgadmin_data:
     name: restoya_pgadmin_data
+  pgdata_pg1:
+  pgdata_pg2:
+  pgdata_pg3:
+  etcd_data:
   pgdata_replica:
     name: restoya_pgdata_replica
   prometheus_data:

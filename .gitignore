@@ -46,3 +46,7 @@ infra/tunel/config.generado.yml
 # del tunel (<uuid>.json) cuando se lo crea a mano, no con preparar-tunel.sh.
 # Esa variante no la cubren las dos lineas de arriba.
 infra/tunel/*.json
+
+# Directorio de trabajo del runner autoalojado: lo llena GitHub Actions
+# con cada descarga del repositorio. No va al repositorio.
+infra/despliegue/runner-trabajo/

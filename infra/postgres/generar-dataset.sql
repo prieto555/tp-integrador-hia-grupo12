@@ -4,20 +4,65 @@
 --   psql -v filas=6000000 -f generar-dataset.sql
 --   psql -v filas=10000   -f generar-dataset.sql   (prueba rapida)
 --
--- Genera datos sinteticos en las cinco tablas que forman el conjunto de
--- prueba, respetando las claves foraneas. Las tablas de catalogo
--- (productos, mesas, roles, funciones) quedan como estan: poner seis
+-- Volumenes (v4):
+--   filas            pedidos, detalle_pedidos y pagos   (6.000.000)
+--   filas_usuarios   usuarios                           (por defecto 10)
+--   filas_historial  historial_accesos                  (por defecto 5000)
+--   Ejemplo: psql -v filas=6000000 -v filas_usuarios=10 -v filas_historial=5000 -f ...
+--
+-- POR QUE CADA TABLA TIENE EL VOLUMEN QUE TIENE
+--
+-- La primera version usaba :filas para las cinco tablas. El resultado medido
+-- sobre la base cargada:
+--
+--   usuarios            6.000.003 filas   1419 MB   <- la tabla MAS GRANDE
+--   usuario_roles       6.000.003 filas    427 MB
+--   historial_accesos   6.000.033 filas    757 MB
+--   ------------------------------------------------
+--   2,6 GB de los 4,6 GB de la base, en datos que no pueden existir.
+--
+-- Un restaurante tiene una decena de empleados, no seis millones. Y el dato
+-- que no puede existir tampoco sirve para medir: el planificador elige segun
+-- selectividad, asi que una tabla de usuarios absurda vuelve irreal cualquier
+-- plan que la toque -y los pedidos la tocan por usuarioId-.
+--
+-- Las tres que SI llegan a seis millones son las del movimiento diario:
+-- pedidos, sus detalles y sus pagos. Ahi el volumen es el del negocio y es
+-- donde se miden las consultas del punto 5.
+--
+-- historial_accesos baja a 5000: con diez empleados fichando todos los dias
+-- durante tres anios, cinco mil inicios de sesion es el orden correcto.
+-- Sigue siendo la tabla que mas crece en produccion, que es lo que el informe
+-- dice de ella, pero crece desde un numero que existe.
+--
+-- Genera datos sinteticos respetando las claves foraneas. Las tablas de
+-- catalogo (productos, mesas, roles, funciones) quedan como estan: poner seis
 -- millones de mesas no tendria sentido.
 --
 -- Los datos NO son uniformes a proposito. Si todos los pedidos tuvieran la
 -- misma fecha y el mismo estado, los planes de ejecucion del punto 5 serian
 -- irreales: el planificador elige segun selectividad, y con datos planos
--- cualquier indice parece igual de bueno. Acá hay sesgo deliberado:
+-- cualquier indice parece igual de bueno. Aca hay sesgo deliberado:
 --   - las fechas se concentran en los meses recientes
 --   - los estados siguen una distribucion parecida a la real
 --   - el 70% de los pedidos son LOCAL y el 30% DELIVERY
+--
+-- TODOS LOS USUARIOS GENERADOS COMPARTEN LA CLAVE "1234" y tienen un rol
+-- asignado. Es un entorno de laboratorio que se levanta para demostrar y se
+-- borra: una clave distinta por usuario no aportaria nada y haria imposible
+-- entrar a probar una pantalla. Las cuentas del equipo no salen de aca, las
+-- crea el seed.
 
 \set ON_ERROR_STOP on
+
+\if :{?filas_usuarios}
+\else
+  \set filas_usuarios 10
+\endif
+\if :{?filas_historial}
+\else
+  \set filas_historial 5000
+\endif
 
 \echo '=============================================='
 \echo 'Generando dataset'
@@ -58,15 +103,61 @@ SELECT
     'Nombre' || (i % 4500),
     (20000000 + i)::text,
     'usuario' || (base + i) || '@ejemplo.test',
-    -- Hash bcrypt de una clave de prueba. Todos comparten el mismo: generar
-    -- seis millones de hashes reales tardaria horas y no aporta nada.
-    '$2b$10$N9qo8uLOickgx2ZMRZoMye1VdLLQ0rCGvKMyaCFH0pRXBHPbkT3pS',
+    -- Hash bcrypt de "1234", la misma para todos. Generar miles de hashes
+    -- distintos tardaria y no aporta nada; y que sea una clave tipeable
+    -- permite entrar con cualquiera de estas cuentas a probar una pantalla.
+    '$2b$10$tyDwYjmJQIfFaPStSZXQ4uLe7LxV.sCZivLiII2dFiAsqgUEhiWlO',
     now() - ((i % 1095) || ' days')::interval,
     now() - ((i % 1095) || ' days')::interval
-FROM generate_series(1, :filas) AS i,
+FROM generate_series(1, :filas_usuarios) AS i,
      LATERAL (SELECT COALESCE(MAX("usuarioId"), 0) AS base FROM usuarios) AS m;
 
 SELECT setval(pg_get_serial_sequence('usuarios', 'usuarioId'), (SELECT MAX("usuarioId") FROM usuarios));
+
+-- ---------------------------------------------------------------------
+-- Roles de esos usuarios.
+--
+-- Sin esto, la pantalla de usuarios del frente los muestra con la columna de
+-- rol vacia: el rol no esta en la tabla de usuarios, esta en usuario_roles.
+--
+-- El reparto imita la planta de un restaurante: de cada diez empleados, uno
+-- es gerente, dos son cajeros, tres son de cocina y cuatro son mozos.
+--
+-- Se reparte por POSICION (row_number) y no por el id del usuario. Con la
+-- version anterior, que miraba "usuarioId % 20", diez empleados caian casi
+-- todos en el mismo tramo del modulo y quedaban nueve mozos y ningun cajero.
+-- Por posicion el reparto es exacto con diez usuarios y con diez mil.
+--
+-- Los ids de los roles se buscan POR NOMBRE y no se escriben a mano, porque
+-- los crea el seed y su numeracion depende del orden en que se corrio.
+-- ---------------------------------------------------------------------
+\echo '--- usuario_roles ---'
+INSERT INTO usuario_roles ("rolId", "usuarioId", "createdAt", "updatedAt")
+SELECT
+    r."rolId",
+    u."usuarioId",
+    now(),
+    now()
+FROM (
+    -- Solo las cuentas generadas aca. Sin este filtro, al admin y a las del
+    -- equipo -que el seed ya dejo como Gerente- se les agregaba ADEMAS un rol
+    -- al azar, y la pantalla de usuarios mostraba "Gerente, Mozo".
+    SELECT
+        "usuarioId",
+        (row_number() OVER (ORDER BY "usuarioId") - 1) % 10 AS puesto
+    FROM usuarios
+    WHERE email LIKE '%@ejemplo.test'
+) AS u
+CROSS JOIN LATERAL (
+    SELECT CASE
+        WHEN u.puesto = 0 THEN 'Gerente'   -- 1 de cada 10
+        WHEN u.puesto < 3 THEN 'Cajero'    -- 2 de cada 10
+        WHEN u.puesto < 6 THEN 'Cocina'    -- 3 de cada 10
+        ELSE 'Mozo'                        -- 4 de cada 10
+    END AS nombre
+) AS elegido
+JOIN roles AS r ON r.nombre = elegido.nombre
+ON CONFLICT ("rolId", "usuarioId") DO NOTHING;
 
 -- ---------------------------------------------------------------------
 -- Pedidos. Fechas sesgadas hacia lo reciente: i^1.6 concentra la mayoria
@@ -145,7 +236,7 @@ SELECT
     now() - (power((i % 100000)::numeric / 100000, 1.6) * 1095 || ' days')::interval,
     '192.168.' || (i % 256) || '.' || ((i * 7) % 256),
     1 + (i % GREATEST((SELECT COUNT(*) FROM usuarios)::int, 1))
-FROM generate_series(1, :filas) AS i;
+FROM generate_series(1, :filas_historial) AS i;
 
 SELECT setval(pg_get_serial_sequence('historial_accesos', 'idHistorial'), (SELECT MAX("idHistorial") FROM historial_accesos));
 
@@ -155,6 +246,7 @@ SELECT setval(pg_get_serial_sequence('historial_accesos', 'idHistorial'), (SELEC
 -- ---------------------------------------------------------------------
 \echo '--- ANALYZE ---'
 ANALYZE usuarios;
+ANALYZE usuario_roles;
 ANALYZE pedidos;
 ANALYZE detalle_pedidos;
 ANALYZE pagos;
@@ -173,5 +265,14 @@ SELECT
 FROM pg_stat_user_tables
 WHERE n_live_tup > 0
 ORDER BY n_live_tup DESC;
+
+\echo '--- usuarios por rol ---'
+SELECT
+    r.nombre AS rol,
+    to_char(count(*), 'FM999,999,999') AS usuarios
+FROM usuario_roles AS ur
+JOIN roles AS r ON r."rolId" = ur."rolId"
+GROUP BY r.nombre
+ORDER BY count(*) DESC;
 
 SELECT pg_size_pretty(pg_database_size(current_database())) AS "tamanio total de la base";

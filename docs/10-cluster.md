@@ -8,7 +8,17 @@
 
 ## 1. La conclusión primero
 
-**Esta arquitectura NO tiene *failover* automático.**
+**Hay dos arquitecturas, y se eligen con un perfil de Docker Compose.**
+
+| Perfil | Nodos | Cuando se cae el primario |
+|---|---|---|
+| (ninguno) + `replica` | `db` + `db-replica` | **Alguien tiene que promover a mano.** |
+| `failover` | `pg1` `pg2` `pg3` + `etcd` + balanceador | **Otro nodo se promueve solo en ~31 s.** Medido. |
+
+La sección 8 tiene el segundo, con su medición. El resto de este informe
+describe el primero, que es donde se midieron las consultas del punto 5.
+
+**Sobre el primero, y sin vueltas: NO tiene *failover* automático.**
 
 La consigna lo pide explícitamente: *«La replicación por sí sola no garantiza
 alta disponibilidad automática. Si el equipo afirma contar con failover
@@ -530,3 +540,97 @@ Sin maquillar:
 9. **Después de promover queda un nodo solo.** El par no se rearma solo: hay
    que borrar el volumen de la réplica y clonar de cero (**48 s** medidos).
    Mientras eso pasa, no hay copia en caliente.
+
+---
+
+## 8. El clúster con *failover* automático (perfil `failover`)
+
+Se agregó el **17/11**, después de que el informe sostuviera durante una
+semana que no lo había. No reemplaza al par simple: convive con él.
+
+```bash
+docker compose --profile app --profile failover up -d
+bash infra/postgres/patroni/cargar-datos.sh
+```
+
+### Qué lo hace automático, que no es el script que promueve
+
+Tres nodos de PostgreSQL con **Patroni**, un **etcd** y un **HAProxy**. La
+pieza que importa es etcd, y conviene decir por qué antes de que lo
+pregunten:
+
+> Un script que detecta que el primario no responde y promueve una réplica
+> es fácil de escribir **y es peligroso**. Si el primario no estaba caído
+> sino incomunicado, quedan dos nodos aceptando escrituras y los datos
+> divergen. Patroni no promueve porque "no responde": promueve porque pudo
+> **tomar el contrato de liderazgo en etcd**, que es único. Un nodo que no
+> puede confirmar con etcd que es el líder **se niega a escribir**.
+
+Y HAProxy no sabe quién es el líder tampoco. Los tres nodos están listados en
+los dos grupos, y a cada uno le pregunta por la API de Patroni:
+
+```
+GET /primary -> contesta 200 solo el lider   -> puerto 5000, escrituras
+GET /replica -> contestan 200 las replicas   -> puerto 5001, lecturas
+```
+
+Por eso una promoción no necesita que nadie toque ninguna configuración.
+
+### Lo medido (17/11)
+
+Una escritura por segundo contra el balanceador, y a mitad de camino se tira
+el líder con `docker stop`:
+
+| | |
+|---|---|
+| Líder al empezar | `pg2`, línea de tiempo 1 |
+| Se lo tira | 03:28:06 |
+| Última escritura que entró | 03:28:04.871 (en pg2) |
+| Primera escritura después | 03:28:36.078 (en **pg3**) |
+| **Corte real** | **31,2 s** |
+| Líder al terminar | `pg3`, línea de tiempo **2** |
+| Intervención manual | **ninguna** |
+
+**Los 31 segundos no son un defecto: son el `ttl` de 30 s.** Es el tiempo que
+el contrato de liderazgo sigue vigente en etcd después de que el líder deja
+de renovarlo. Hasta que no vence, ningún otro nodo puede tomarlo — y eso es
+exactamente lo que evita que dos nodos se crean primarios. Bajarlo acelera el
+failover y aumenta las promociones en falso por una pausa de red.
+
+**La línea de tiempo pasó de 1 a 2.** Es la prueba de que hubo promoción y no
+un reinicio: PostgreSQL abre una línea nueva para que los WAL del nodo viejo
+y los del nuevo no se puedan mezclar.
+
+Al volver a levantar `pg2`, **se reincorporó solo como réplica, en la línea
+de tiempo 2 y con 0 bytes de retraso, sin volver a clonar.** Eso lo permite
+`use_pg_rewind: true`: en vez de copiar la base entera, rebobina el nodo
+viejo hasta el punto en que las dos historias se separaron.
+
+### Una prueba que no podía fallar
+
+La primera corrida dio **75 escrituras y 0 errores**, que parecía un
+resultado perfecto. No lo era: el script sacaba el nombre del líder con un
+`grep` sobre la tabla de texto y se traía `restoya-cluster` —el nombre del
+clúster, no el del nodo—. El `docker stop` fallaba contra un contenedor
+inexistente, un `|| true` se tragaba el error, y la prueba medía un sistema
+al que nunca se le cayó nada.
+
+Queda anotado porque es el mismo error que el del punto 13: **una prueba que
+no puede fallar no prueba nada**, y el resultado limpio es justamente lo que
+hace que no se la mire dos veces.
+
+### Qué NO se llevó a este clúster, y por qué
+
+**Los 6.000.000 de pedidos del punto 4 no están acá.** Viven en el nodo
+simple, que es donde se midieron las consultas del punto 5 y donde hay
+memoria para que esas mediciones signifiquen algo. Replicarlos en tres nodos
+serían unos 10 GB para demostrar lo mismo. Los pedidos de la demostración se
+crean en vivo, que además es mejor prueba: se escribe **antes y después** de
+la caída.
+
+Y la otra limitación, por la misma razón: los tres nodos corren con
+`shared_buffers` de 128 MB, no los 512 MB del nodo simple. El primer intento
+copió los valores grandes y **el motor de Docker se murió y se llevó los 28
+contenedores**: cinco PostgreSQL pidiendo 2,5 GB solo en buffers no entran en
+una notebook de 15,8 GB. Este clúster demuestra elección de líder, no
+rendimiento.

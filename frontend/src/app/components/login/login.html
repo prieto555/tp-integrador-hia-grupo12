@@ -17,7 +17,7 @@
         <div class="input-group">
           <span class="input-group-text bg-dark text-muted border-secondary border-opacity-50"><i class="fas fa-envelope"></i></span>
           <input type="email" class="form-control custom-input bg-dark text-white border-secondary border-opacity-50" id="email" 
-                 formControlName="email" required placeholder="admin@restoya.com"
+                 formControlName="email" required placeholder="admin@restoya.local"
                  [ngClass]="{'is-invalid': loginForm.get('email')?.invalid && loginForm.get('email')?.touched}">
         </div>
         <div class="invalid-feedback d-block position-absolute" *ngIf="loginForm.get('email')?.invalid && loginForm.get('email')?.touched" style="bottom: -20px; font-size: 0.75rem;">

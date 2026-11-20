@@ -22,7 +22,17 @@ const obtenerComandas = async (req, res) => {
           ]
         }
       ],
-      order: [["idPedido", "ASC"]]
+      // Las mas viejas primero: en cocina se cocina por orden de llegada.
+      order: [["fechaCreacion", "ASC"]],
+
+      // ESTE LIMIT ES EL DEL PUNTO 5, y es el caso que tumbaba el proceso.
+      // Con la base de prueba hay 1.333.333 pedidos en PENDIENTE o EN_COCINA,
+      // cada uno con sus detalles y el producto de cada detalle. Sin tope, una
+      // sola llamada se come la memoria y Docker reinicia el contenedor.
+      //
+      // Una cocina real nunca tiene mas de unas decenas de comandas a la vez:
+      // el tope no esconde nada, sirve para lo que la pantalla muestra.
+      limit: Math.min(parseInt(req.query.limite, 10) || 50, 200)
     });
     res.json(comandas);
   } catch (error) {

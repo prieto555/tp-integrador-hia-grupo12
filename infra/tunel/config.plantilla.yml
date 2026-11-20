@@ -1,8 +1,9 @@
 # Configuración del túnel de Cloudflare (punto 9).
 #
 # ESTA ES LA PLANTILLA, y es el archivo que se versiona. preparar-tunel.sh
-# reemplaza DOMINIO_PUBLICO por el valor del .env y escribe config.generado.yml,
-# que es el que monta el contenedor y está en el .gitignore.
+# reemplaza los marcadores por los valores del .env y escribe
+# config.generado.yml, que es el que monta el contenedor y está en el
+# .gitignore.
 #
 # ───────────────────────────────────────────────────────────────────────────────
 # Por qué la configuración vive acá y no en el panel de Cloudflare
@@ -22,26 +23,49 @@
 # Internet es una decisión de seguridad, y una decisión de seguridad que vive
 # en el panel de alguien no se puede auditar ni revisar.**
 #
-# ───────────────────────────────────────────────────────────────────────────────
-# Qué se publica, y sobre todo qué NO
-# ───────────────────────────────────────────────────────────────────────────────
-# Se publica UNA sola cosa: la aplicación, a través de nginx, que sirve el
-# frente y hace de proxy de `/api/`. Nada más.
+# Con cinco nombres publicados en vez de uno, esto pesa más que antes: este
+# archivo es la lista completa de lo que se llega desde Internet, y se lee de
+# un tirón.
 #
-# Deliberadamente NO se publican, aunque el túnel podría hacerlo con dos
-# líneas cada uno:
+# ───────────────────────────────────────────────────────────────────────────────
+# Qué se publica
+# ───────────────────────────────────────────────────────────────────────────────
+# Cada herramienta tiene su propio nombre, en la misma zona:
 #
+#   | Nombre público     | Servicio interno | Qué es                         |
+#   |--------------------|------------------|--------------------------------|
+#   | DOMINIO_PUBLICO    | frontend:80      | la aplicación (nginx + /api/)  |
+#   | DOMINIO_N8N        | n8n:5678         | automatización (punto 13)      |
+#   | DOMINIO_MANTIS     | mantis:80        | incidencias (punto 11)         |
+#   | DOMINIO_NUBE       | nextcloud:80     | gestión documental (punto 12)  |
+#   | DOMINIO_GRAFANA    | grafana:3000     | monitoreo (punto 10)           |
+#
+# Un solo nivel de subdominio, y no es un gusto: el certificado gratuito de
+# Cloudflare cubre `dominio.com` y `*.dominio.com`, pero NO
+# `algo.restoya.dominio.com`. Con dos niveles el navegador corta por
+# certificado inválido antes de que el túnel entre en juego.
+#
+# ───────────────────────────────────────────────────────────────────────────────
+# Qué NO se publica, y por qué
+# ───────────────────────────────────────────────────────────────────────────────
 #   | Servicio      | Puerto | Por qué no |
 #   |---------------|--------|------------|
-#   | pgAdmin       | 5050   | consola de la base: con eso se lee y se borra todo |
-#   | Grafana       | 3001   | interfaz administrativa, y muestra la forma interna del sistema |
+#   | pgAdmin       | 5050   | **entra sin credencial**: SERVER_MODE=False lo deja en modo escritorio y ya viene conectado a la base. Publicarlo es publicar la base. Hallazgo 17 de docs/09-seguridad.md |
 #   | Prometheus    | 9090   | expone todas las métricas y los destinos sin autenticación |
-#   | Alertmanager  | 9093   | permite silenciar alertas: apagar el monitoreo desde afuera |
-#   | MantisBT      | 8089   | los problemas del sistema, con detalle de cómo explotarlos |
-#   | Nextcloud     | 8081   | la documentación interna del proyecto |
-#   | n8n           | 5678   | tiene las credenciales de Mantis y Nextcloud adentro |
-#   | Mailpit       | 8025   | buzón sin autenticación |
+#   | Alertmanager  | 9093   | permite silenciar alertas: apagar el monitoreo desde afuera, sin credencial |
+#   | Mailpit       | 8025   | buzón sin autenticación; tiene los correos de altas de Mantis |
 #   | PostgreSQL    | 5433/4 | la base, directamente |
+#
+# La diferencia entre las dos listas es una sola cosa: **las cuatro de arriba
+# piden usuario y clave, y estas cinco no.** No es que las primeras sean menos
+# valiosas —n8n guarda las credenciales de Mantis y de Nextcloud—, es que en
+# las primeras hay algo entre Internet y el servicio, y en estas no hay nada.
+#
+# Lo que eso implica, dicho de frente: a partir de ahora **la clave de cada
+# herramienta es lo único que la separa de cualquiera**. Antes había dos
+# cosas: la clave y el hecho de que el puerto sólo escuchaba en 127.0.0.1.
+# Está anotado como hallazgo 18 en docs/09-seguridad.md, con la mitigación que
+# corresponde (Cloudflare Access) y el estado real.
 #
 # El túnel **no abre puertos en el router**: el conector sale hacia Cloudflare.
 # Eso significa que lo que no está en este archivo no es alcanzable desde
@@ -63,9 +87,10 @@ metrics: 0.0.0.0:2000
 retries: 5
 
 ingress:
-  # 1. La aplicación. nginx sirve el frente y hace de proxy de /api/, así que
-  #    con esta única regla queda publicada la aplicación completa y nada más.
-  #    El backend NO publica puerto: sólo se llega a él por este camino.
+  # ───────────────────────────────────────────────────────── 1. La aplicación
+  # nginx sirve el frente y hace de proxy de /api/, así que con esta única
+  # regla queda publicada la aplicación completa. El backend NO publica
+  # puerto: sólo se llega a él por este camino.
   - hostname: DOMINIO_PUBLICO
     service: http://frontend:80
     originRequest:
@@ -78,10 +103,55 @@ ingress:
       # $host y la aplicación arma URLs con eso.
       httpHostHeader: DOMINIO_PUBLICO
 
-  # 2. Cualquier otra cosa: 404.
+  # ──────────────────────────────────────────── 2. n8n — punto 13
+  # El servicio con más alcance del sistema: está en las cuatro redes y guarda
+  # adentro las credenciales de Mantis, de Nextcloud y de la base. Entra por
+  # la cuenta de propietario de n8n 1.x (la autenticación básica no existe más
+  # desde la 1.0: es el hallazgo 15).
+  - hostname: DOMINIO_N8N
+    service: http://n8n:5678
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: DOMINIO_N8N
+
+  # ──────────────────────────────────────── 3. MantisBT — punto 11
+  # La carpeta admin/ queda escondida salvo que MANTIS_ENABLE_ADMIN valga 1.
+  # Con Mantis publicado eso pasa a ser crítico: con admin/ a la vista,
+  # cualquiera que llegue al nombre puede reinstalar.
+  - hostname: DOMINIO_MANTIS
+    service: http://mantis:80
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: DOMINIO_MANTIS
+
+  # ────────────────────────────────────── 4. Nextcloud — punto 12
+  # Necesita su nombre en trusted_domains o responde "Access through untrusted
+  # domain" y no sirve ni la pantalla de inicio. Lo configura el paso 6 de
+  # preparar-tunel.sh.
   #
-  #    Esta regla es obligatoria —cloudflared no arranca sin una regla final
-  #    sin hostname— pero además es la que importa: si alguien apunta otro
-  #    nombre a este túnel, o si mañana se agrega un hostname al panel por
-  #    error, lo que recibe es un 404 y no un servicio interno.
+  # El plan gratuito de Cloudflare corta las subidas en 100 MB. Para los
+  # archivos del proyecto alcanza de sobra; una copia de la base (466 MB) no
+  # pasa por acá.
+  - hostname: DOMINIO_NUBE
+    service: http://nextcloud:80
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: DOMINIO_NUBE
+
+  # ──────────────────────────────────────── 5. Grafana — punto 10
+  # Muestra la forma interna del sistema: nombres de contenedores, consultas,
+  # umbrales. Entra con la cuenta admin y GF_USERS_ALLOW_SIGN_UP está en
+  # false, así que nadie se crea una cuenta solo.
+  - hostname: DOMINIO_GRAFANA
+    service: http://grafana:3000
+    originRequest:
+      connectTimeout: 10s
+      httpHostHeader: DOMINIO_GRAFANA
+
+  # ──────────────────────────────────── 6. Cualquier otra cosa: 404
+  #
+  # Esta regla es obligatoria —cloudflared no arranca sin una regla final sin
+  # hostname— pero además es la que importa: si alguien apunta otro nombre a
+  # este túnel, o si mañana se agrega un hostname al panel por error, lo que
+  # recibe es un 404 y no un servicio interno.
   - service: http_status:404

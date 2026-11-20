@@ -3,7 +3,8 @@
 Entregable del punto 15.9. Cubre el punto 14 de la consigna (épica E14 del
 backlog).
 
-Son **diecisiete hallazgos**. Todos están verificados contra el stack
+Son **dieciocho hallazgos** y una defensa agregada después (la sección 19).
+Todos están verificados contra el stack
 corriendo: los comandos de verificación están al final de cada sección, con su
 salida real. **El hallazgo 12 es la única excepción** y lo dice en su propia
 sección: ahí la evidencia es el código, no una corrida.
@@ -13,6 +14,11 @@ sección: ahí la evidencia es el código, no una corrida.
 > de pantalla** para la entrega. Vale decirlo porque es el patrón: los
 > controles que fallaron no fallaban al leer la configuración, fallaban al
 > usar el sistema.
+>
+> **El 18 es de otra clase y conviene no disfrazarlo.** No es un descuido que
+> se encontró: es el precio de una decisión que el equipo tomó el 14/11 a
+> sabiendas —publicar cuatro herramientas en sus propios subdominios— y que
+> está anotado acá porque una decisión así no se defiende escondiéndola.
 
 ---
 
@@ -37,6 +43,7 @@ sección: ahí la evidencia es el código, no una corrida.
 | 15 | n8n no pide ninguna credencial: `N8N_BASIC_AUTH_*` no existe en n8n 1.x | Alta | **Corregida** (PR #7) |
 | 16 | La imagen de n8n está marcada como crítica por el propio n8n | Media | **Documentado, no corregido** |
 | 17 | pgAdmin no pide ninguna credencial, y entra a la base con la clave guardada | Alta | **Documentado, no corregido** |
+| 18 | n8n, Mantis, Nextcloud y Grafana quedan publicados en Internet con la clave como única barrera | Alta | **Asumido a propósito**, con mitigación pendiente |
 
 ---
 
@@ -601,6 +608,15 @@ O sea que quien llegue al puerto 5050 no obtiene *una herramienta* para
 administrar la base: obtiene **una sesión ya abierta como `restoya`** sobre
 30 millones de filas, con el editor de SQL incluido.
 
+> **El 5050 es el valor por omisión, no una constante: sale de `PGADMIN_PORT`.**
+> En la notebook donde se escribió esto hubo que moverlo al **5150** el
+> 16/11, porque Windows se quedó con el 5050 (está contado en la tabla de
+> problemas de [`INSTALACION.md`](../INSTALACION.md)). Si repetís la medición
+> y te da *connection refused*, mirá qué dice `PGADMIN_PORT` antes de concluir
+> que pgAdmin está cerrado: **el hallazgo es que no pide credenciales**, y eso
+> no cambia con el número de puerto. Comprobado de nuevo el 16/11 contra el
+> 5150: `/browser/ -> 200` sin ninguna cookie.
+
 **Lo que lo contiene hoy, y es lo mismo que contiene a n8n:** el puerto se
 publica en `127.0.0.1` y **no está en el *ingress* del túnel** (ver
 [`15-publicacion.md`](15-publicacion.md) §3, donde pgAdmin figura
@@ -628,6 +644,270 @@ que el punto 4 pide **demostrar funcionando**. El arreglo, en orden:
 
 ---
 
+## 18 · Cuatro herramientas publicadas, y la clave como única barrera
+
+**Qué es.** Desde el 14/11 el túnel publica cinco nombres y no uno:
+
+| Nombre | Herramienta | Qué hay adentro |
+|---|---|---|
+| `restoya.liners-panel.com` | la aplicación | pública a propósito |
+| `n8n.liners-panel.com` | n8n | **las credenciales de Mantis, de Nextcloud y de la base** |
+| `mantis.liners-panel.com` | MantisBT | los problemas del sistema, con detalle de cómo reproducirlos |
+| `nube.liners-panel.com` | Nextcloud | la documentación interna del proyecto |
+| `grafana.liners-panel.com` | Grafana | la forma interna del sistema: contenedores, consultas, umbrales |
+
+**Por qué se hizo.** Los cinco integrantes tienen que poder entrar a n8n, a
+Mantis y a Nextcloud desde sus casas para preparar la defensa. La
+alternativa era que cada uno levantara el stack completo en su máquina, y eso
+no es una alternativa: son 23 contenedores y 6.000.000 de filas por tabla.
+
+**Qué se perdió.** Antes había **dos** cosas entre cada herramienta e
+Internet: la credencial, y el hecho de que el puerto sólo escuchaba en
+`127.0.0.1`. Ahora hay **una**. El segundo control era el que no dependía de
+que nadie se equivocara.
+
+Y los nombres no son un secreto. Los certificados que emite Cloudflare se
+anotan en los registros públicos de *Certificate Transparency*: nadie tiene
+que adivinar `n8n.liners-panel.com`, está en una lista consultable. **La
+oscuridad del nombre no cuenta como control.**
+
+**Por qué estas cuatro y no las otras cinco.** El criterio es uno solo: si el
+servicio pide usuario y clave o no. pgAdmin (hallazgo 17), Prometheus,
+Alertmanager, Mailpit y PostgreSQL **no piden nada**, y por eso siguen fuera
+del *ingress*. No es que lo que guardan valga menos —n8n es el blanco más
+valioso del sistema— es que en los otros cinco no hay absolutamente nada
+entre Internet y el servicio.
+
+**Qué sostiene hoy la publicación:**
+
+1. Las cuatro herramientas exigen credencial. En n8n eso recién es cierto
+   desde el PR #7 (hallazgo 15): la cuenta de propietario está dada de alta,
+   así que ya no hay un `Set up owner account` esperando al primero que
+   llegue. **Si ese hallazgo no estuviera cerrado, publicar n8n habría sido
+   entregar el sistema.**
+2. Grafana tiene `GF_USERS_ALLOW_SIGN_UP: "false"`: nadie se crea una cuenta
+   solo.
+3. La carpeta `admin/` de Mantis está escondida mientras
+   `MANTIS_ENABLE_ADMIN` valga 0, que es el valor normal. Con Mantis
+   publicado esto pasó de higiene a crítico: con `admin/` a la vista,
+   cualquiera que llegue al nombre puede reinstalar.
+4. Las claves están en el `.env`, que no se versiona.
+
+**La mitigación que corresponde es Cloudflare Access**, y acá hay una
+novedad que apareció al probar los cinco nombres: **n8n ya la tiene puesta.**
+Pedirle la raíz desde afuera no devuelve n8n, devuelve esto:
+
+```
+$ curl -sI https://n8n.liners-panel.com/
+HTTP/2 302
+location: https://raspy-bush-a7b1.cloudflareaccess.com/cdn-cgi/access/login/
+          n8n.liners-panel.com?kid=...
+```
+
+Cloudflare Access pone una pantalla de ingreso **antes** del túnel, con una
+lista de correos autorizados. La herramienta **no ve ni una petición** de
+alguien que no esté en la lista: la clave de n8n dejó de ser la única barrera
+y pasó a ser la segunda. Y justo n8n es el que más convenía proteger, porque
+es el que guarda las credenciales de todo lo demás.
+
+> **Esto no se puso hoy.** El nombre `n8n.liners-panel.com` y su aplicación
+> de Access venían del trabajo anterior de n8n, y el `CNAME` ya apuntaba a
+> este túnel —el script lo informó: *"n8n.liners-panel.com ya existia y
+> apunta a este tunel"*—. Conviene decirlo así y no quedarse con el mérito.
+
+**Las otras tres no la tienen**, y se comprobó igual: Mantis, Nextcloud y
+Grafana responden con su propia pantalla de ingreso, sin nada delante:
+
+```
+mantis   -> 302  https://mantis.liners-panel.com/login_page.php
+nube     -> 302  https://nube.liners-panel.com/login
+grafana  -> 302  /login
+```
+
+Agregarlas es sumar tres dominios a la aplicación de Access que **ya existe**,
+en *Zero Trust → Access → Applications*:
+
+1. Un `Application domain` por cada una: `mantis`, `nube` y `grafana`.
+   **No** el de la aplicación, que tiene que seguir siendo pública.
+2. Una política *Allow* con `Emails` y los cinco correos del equipo.
+3. Método de ingreso: *One-time PIN*, que no necesita dar de alta nada más.
+
+Es gratis hasta cincuenta usuarios.
+
+> **Una cosa que hay que saber y que no es obvia: Access no rompe el flujo
+> F01.** Alertmanager le pega al *webhook* de n8n por `http://n8n:5678`,
+> dentro de la red de Docker, así que no pasa por Cloudflare y Access no lo
+> ve. Si el aviso fuera por el nombre público, Access lo cortaría con un 302
+> y las alertas dejarían de abrir incidencias **sin ningún error visible**.
+
+**Mientras las otras tres no estén, lo que corresponde es bajar el túnel
+cuando no se está usando:**
+
+```bash
+cd infra/compose && docker compose --profile tunel down
+```
+
+Eso además es lo que hay que hacer después de la entrega mientras D-01 siga
+abierto (hallazgo 12: diecinueve endpoints sin autenticación).
+
+**Cómo se verifica que lo publicado es lo que se cree que está publicado.**
+La lista completa es el *ingress* de `infra/tunel/config.plantilla.yml`, que
+es un archivo versionado y se revisa en el pull request. La última regla del
+archivo es `service: http_status:404` sin `hostname`, así que cualquier
+nombre que no esté en la lista —incluido uno que alguien agregue al panel por
+error— recibe un 404 y no un servicio interno.
+
+> **La lección de este hallazgo es distinta de las otras diecisiete.** Las
+> demás son cosas que estaban mal sin que nadie lo supiera. Esta está
+> anotada **antes** de que pase algo, con el motivo, el costo y la
+> mitigación. Un informe de seguridad que sólo lista descuidos ajenos es más
+> fácil de escribir que uno que anota una decisión propia incómoda.
+
+---
+
+## 19 · Aguante a una inundación de peticiones
+
+No es un hallazgo: es una defensa que **no estaba** y se agregó el 14/11. Va
+numerada igual para que se pueda citar.
+
+Conviene empezar por lo que **no** se puede hacer acá. Una inundación de
+verdad —decenas de miles de peticiones por segundo desde miles de
+direcciones— no la aguanta una notebook, y ninguna configuración de nginx la
+va a aguantar. Lo que sí se puede es: **que no haga falta que llegue hasta
+acá**, y **que una sola máquina no pueda tumbar el sistema sola**. Son tres
+capas y cada una hace una cosa distinta.
+
+### Capa 1 · Cloudflare, que es la que importa para el volumen
+
+Esto ya estaba, y vale decirlo porque es la parte más fuerte y es gratis:
+
+- **Todo el tráfico entra por Cloudflare.** No es una decisión de
+  rendimiento, es la única forma de publicar desde esta conexión: el
+  proveedor usa CGNAT y no hay IP pública propia.
+- **El origen no es alcanzable.** No hay puerto abierto en el router ni IP
+  pública que apuntar: el conector del túnel **sale** hacia Cloudflare. Un
+  ataque directo al origen, que es lo que deja afuera a la mayoría de las
+  defensas de borde, acá **no tiene a dónde ir**.
+- Cloudflare mitiga volumen de red (capas 3 y 4) sin medidor en todos sus
+  planes, el gratuito incluido.
+
+**Lo que falta de esta capa**, y es lo primero que hay que hacer si alguna vez
+pasa de verdad: una **regla de limitación** en el panel, que corta en el borde
+y no gasta ni la conexión de casa. El plan gratuito permite una regla (vale
+confirmarlo en el panel: Cloudflare cambia los límites de los planes). La que
+corresponde:
+
+```
+Security -> WAF -> Rate limiting rules -> Create rule
+  Si      URI Path empieza con  /api/
+  Cuenta  por IP de origen
+  Mas de  100 peticiones en 10 segundos
+  Accion  Block durante 60 segundos
+```
+
+Y en el peor caso, un interruptor: **Under Attack Mode** (*Security ->
+Settings*), que le pone a cada visitante una comprobación de navegador. Se
+enciende en dos clics, degrada la experiencia de todo el mundo y por eso no
+se deja puesto.
+
+### Capa 2 · nginx, que es la que se puede probar
+
+Esta es la que se agregó, y está en `frontend/nginx.conf`, que es un archivo
+versionado y revisable:
+
+```nginx
+limit_req_zone  $clave_limite zone=estaticos:10m rate=30r/s;
+limit_req_zone  $clave_limite zone=api:10m       rate=10r/s;
+limit_conn_zone $clave_limite zone=conexiones:10m;
+limit_req_status  429;
+limit_conn_status 429;
+```
+
+**La clave de limitación es la mitad del trabajo, y es donde esto se hace mal
+casi siempre.** No se usa `$ip_del_visitante` —el map que ya existía para
+registrar la IP— porque cuando no hay túnel ese map cae en
+`$proxy_add_x_forwarded_for`, que **incluye la cabecera X-Forwarded-For que
+mandó el cliente**. Para registrar está bien; para limitar es inútil: quien
+quiera pasar el límite sólo tiene que mandar un X-Forwarded-For distinto en
+cada petición y cada una cuenta como un visitante nuevo.
+
+```nginx
+map $http_cf_connecting_ip $clave_limite {
+    ""      $binary_remote_addr;   # local: la direccion real del socket
+    default $http_cf_connecting_ip; # tunel: la pone el borde de Cloudflare
+}
+```
+
+Ninguna de las dos se puede falsear: `CF-Connecting-IP` la **sobreescribe**
+Cloudflare, y `$binary_remote_addr` es el socket. Es la misma lección del
+hallazgo 14 —el limitador de login contaba a todo el mundo como una sola IP—
+pero al revés: ahí el problema era confiar de menos, acá sería confiar de más.
+
+Los números salen de lo que hace la aplicación, no de una recomendación:
+cargar una pantalla pide del orden de veinte archivos de una vez, y la
+pantalla más pesada hace cuatro llamadas a la API. De ahí 30 r/s con arranque
+de 60 para los estáticos, y 10 r/s con arranque de 20 para `/api/`, que es
+lo que cuesta caro porque cada petición termina en una consulta contra tablas
+de 6.000.000 de filas.
+
+Y dos cosas más, que no son de volumen sino de **Slowloris** —mandar una
+petición de a un byte para ocupar una conexión sin cerrarla nunca—:
+hasta 30 conexiones por dirección, y los tiempos de espera de cabecera y
+cuerpo bajados de los 60 segundos de omisión a 15. Con los valores de
+omisión, unas pocas conexiones lentas alcanzan para tener a nginx ocupado.
+
+#### Lo medido
+
+60 peticiones seguidas a `/api/roles`, lo más rápido que las manda curl:
+
+```
+22 x 200
+38 x 429
+```
+
+Y en el registro de nginx, con nombre y zona:
+
+```
+[warn] limiting requests, excess: 20.690 by zone "api", client: 172.24.0.1,
+       request: "GET /api/roles HTTP/1.1"
+```
+
+**Que corte no sirve si además corta a quien no hizo nada**, así que se midió
+también lo contrario: 25 cargas seguidas de la página dieron **25 × 200**,
+ninguna rechazada.
+
+Y la prueba que de verdad importaba, porque el riesgo de esto era romper un
+control que ya funcionaba: los once intentos de inicio de sesión del punto 14
+siguen dando **diez 401 y 429 del intento 11 en adelante**. El 429 sigue
+saliendo del limitador del backend —que cuenta intentos *fallidos* en quince
+minutos— y no de nginx. Son dos cosas distintas: **nginx frena volumen, el
+backend frena fuerza bruta.**
+
+### Capa 3 · El backend
+
+Lo que ya había y no se tocó: límite general de 300 peticiones por minuto,
+login 10 cada 15 minutos (hallazgo 3), chatbot 10 por minuto (hallazgo 4), y
+topes de filas en los listados.
+
+### Qué NO resuelve nada de esto
+
+- **Una sola petición cara.** Es la lección del punto 5 y hay que decirla
+  acá: una única llamada a `/api/pedidos/cocina` tumbaba el proceso entero
+  por falta de memoria. No hacía falta volumen, hacía falta una consulta sin
+  `LIMIT`. Ningún limitador por IP frena eso; lo frenó el índice.
+- **Un ataque distribuido de verdad.** Mil direcciones haciendo diez
+  peticiones cada una pasan todos los límites por IP. Eso lo tiene que cortar
+  el borde, y es la regla de Cloudflare que falta.
+- **Los subdominios de herramientas** (hallazgo 18) no pasan por este nginx:
+  se publican directo, así que no tienen límite de peticiones propio. n8n está
+  cubierto por Cloudflare Access, que corta en el borde antes de que la
+  petición llegue a casa —y por eso Access resuelve las dos cosas a la vez—.
+  Mantis, Nextcloud y Grafana no tienen ni una ni la otra.
+- **Que la máquina esté prendida.** Es una notebook en una casa. El
+  `restart: unless-stopped` levanta un contenedor caído; no levanta la casa.
+
+---
+
 ## Matriz de amenazas (E14-04)
 
 Las cinco familias que pide la consigna, con lo que hay hoy y lo que falta. La
@@ -648,8 +928,8 @@ columna que importa es la última.
 |---|---|
 | **Qué pasaría** | La aplicación deja de responder |
 | **Puerta de entrada** | Peticiones masivas, o una sola petición cara |
-| **Qué hay** | Límite general de 300/min, login 10/15min, chatbot 10/min; topes de filas en los listados; *healthcheck* y `restart: unless-stopped`; alertas de monitoreo |
-| **Qué falta** | Nada delante del servidor que absorba volumen. **Y un recordatorio del punto 5: una sola petición a `/api/pedidos/cocina` tumbaba el proceso entero** — no hacía falta volumen, hacía falta una consulta sin `LIMIT` |
+| **Qué hay** | **Tres capas, ver la sección 19.** Cloudflare adelante (absorbe volumen de red y el origen no tiene IP pública); límites de peticiones y de conexiones en nginx, por IP real, **medidos**; y en el backend límite general de 300/min, login 10/15min y chatbot 10/min. Topes de filas en los listados; *healthcheck* y `restart: unless-stopped`; alertas de monitoreo |
+| **Qué falta** | La regla de limitación del panel de Cloudflare, que es la única capa que corta **antes** de llegar a casa. **Y un recordatorio del punto 5: una sola petición a `/api/pedidos/cocina` tumbaba el proceso entero** — no hacía falta volumen, hacía falta una consulta sin `LIMIT` |
 
 ### Robo de credenciales
 

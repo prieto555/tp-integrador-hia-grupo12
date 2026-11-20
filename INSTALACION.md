@@ -28,9 +28,12 @@ levanta**, paso por paso, sin dar nada por sabido.
 de RAM**. Con menos levanta igual, pero conviene no correr los cuatro perfiles
 de herramientas a la vez.
 
-**Todo queda en `127.0.0.1`.** Ningún puerto sale a la red local. Lo único que
-se expone a Internet es la aplicación, y sólo si se levanta el perfil `tunel` a
-propósito.
+**Todo queda en `127.0.0.1`.** Ningún puerto sale a la red local. A Internet
+sale **sólo** lo que esté en el *ingress* del túnel, y sólo si se levanta el
+perfil `tunel` a propósito: hoy son la aplicación y cuatro herramientas
+(n8n, Mantis, Nextcloud y Grafana). La lista exacta, con el motivo de cada
+una y de las cinco que quedan afuera, está en
+[`infra/tunel/config.plantilla.yml`](infra/tunel/config.plantilla.yml).
 
 ---
 
@@ -262,15 +265,41 @@ cada arranque y no sirve para una entrega.
 cloudflared tunnel login          # abre el navegador, una sola vez
 ```
 
-Agregá `DOMINIO_PUBLICO=<subdominio>.<tu-dominio>` al `.env` y después:
+Agregá al `.env` los cinco nombres —el de la aplicación y los cuatro de las
+herramientas—, todos subdominios **de un solo nivel** de la zona que está en
+Cloudflare:
+
+```
+DOMINIO_PUBLICO=restoya.midominio.com
+ESQUEMA_PUBLICO=https
+DOMINIO_N8N=n8n.midominio.com
+DOMINIO_MANTIS=mantis.midominio.com
+DOMINIO_NUBE=nube.midominio.com
+DOMINIO_GRAFANA=grafana.midominio.com
+```
+
+Y después:
 
 ```bash
 ./infra/tunel/preparar-tunel.sh
-docker compose --profile tunel up -d
+docker compose --profile app --profile tunel up -d
 ```
 
-El script es idempotente: si el túnel ya existe, no crea otro. Procedimiento
-completo en [`docs/15-publicacion.md`](docs/15-publicacion.md).
+El perfil `app` tiene que estar: el túnel sin nginx arriba devuelve 502.
+
+El script es idempotente: si el túnel ya existe, no crea otro, y no toca
+ningún otro túnel de la cuenta. Las mismas variables las lee el
+`docker-compose.yml` para decirle a cada herramienta cuál es su nombre
+público; si se dejan vacías, cada una vuelve a su dirección local y el túnel
+no se puede preparar.
+
+**Si Nextcloud no estaba levantado** cuando corriste el script, volvé a
+correrlo después: su nombre público hay que escribirlo con `occ` adentro del
+contenedor, y es el único paso que no se puede dejar en un archivo.
+
+Procedimiento completo y el por qué de cada decisión en
+[`docs/15-publicacion.md`](docs/15-publicacion.md). El paso a paso para
+conseguir el dominio desde cero está en [`DOMINIO.md`](DOMINIO.md).
 
 ---
 
@@ -363,6 +392,7 @@ Los que ya pasaron. Están acá para que no cuesten una tarde otra vez.
 | **Mantis muestra una incidencia de 17** | El filtro por defecto esconde las cerradas (§5.2) |
 | **Grafana muestra paneles en negro** | Sólo dibuja los que entran en pantalla. Hay que desplazar, o agrandar la ventana |
 | **El motor de Docker se cae** y se lleva los 23 contenedores | Pasó tres veces el 11/11. Abrir Docker Desktop y volver a levantar: los datos están en los volúmenes y la réplica **retoma el *streaming* sola**, sin volver a clonar |
+| **`ports are not available: … bind: An attempt was made to access a socket in a way forbidden by its access permissions`** | **No es Docker ni el proyecto: Windows se reservó ese puerto.** Hyper-V se queda con rangos dinámicos al arrancar, y después de un reinicio pueden caer encima de un puerto del `.env`. Pasó el 14/11 con el **5433**. Mirá los rangos con `netsh interface ipv4 show excludedportrange protocol=tcp`; si tu puerto cae adentro de uno, cambiá el valor en el `.env` (`DB_PORT_HOST=5533`, por ejemplo) y volvé a levantar. **No hace falta tocar nada más**: adentro de la red de Docker la base sigue en el 5432, así que pgAdmin, el backend y la réplica no se enteran — lo único que cambia es por qué puerto la alcanzás desde Windows. **Volvió a pasar el 16/11, esta vez con el `5050` de pgAdmin** (se movió a `PGADMIN_PORT=5150`), y ahí se vio que la explicación de arriba estaba incompleta: ese puerto **no figuraba** en la lista de rangos excluidos. La causa de fondo es otra: el rango dinámico de Windows arranca en el **1024** en vez del 49152 de fábrica (`netsh int ipv4 show dynamicport tcp`), así que el sistema puede quedarse con cualquier puerto para una conexión saliente cualquiera. Para confirmar que no es culpa de Docker, probá abrirlo con otra cosa: `node -e "require('net').createServer().listen(5050,'127.0.0.1')"`. Si también dice `EACCES`, es Windows. El arreglo permanente, como administrador y reiniciando después: `netsh int ipv4 set dynamicport tcp start=49152 num=16384` |
 
 Si algo no está acá, el informe del punto correspondiente tiene su propia
 sección de limitaciones. El índice está en [`docs/README.md`](docs/README.md).
