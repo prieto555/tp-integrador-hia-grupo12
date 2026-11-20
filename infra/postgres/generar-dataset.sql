@@ -4,23 +4,36 @@
 --   psql -v filas=6000000 -f generar-dataset.sql
 --   psql -v filas=10000   -f generar-dataset.sql   (prueba rapida)
 --
--- Volumenes (v3):
---   filas            pedidos, detalle_pedidos y pagos (las tablas del
---                    movimiento diario, donde 6M tiene sentido)
---   filas_usuarios   usuarios            (por defecto 10000)
---   filas_historial  historial_accesos   (por defecto 50000)
---   Ejemplo: psql -v filas=6000000 -v filas_usuarios=10000 -v filas_historial=50000 -f ...
+-- Volumenes (v4):
+--   filas            pedidos, detalle_pedidos y pagos   (6.000.000)
+--   filas_usuarios   usuarios                           (por defecto 10)
+--   filas_historial  historial_accesos                  (por defecto 5000)
+--   Ejemplo: psql -v filas=6000000 -v filas_usuarios=10 -v filas_historial=5000 -f ...
 --
--- POR QUE NO TODO VALE 6 MILLONES. La primera version usaba :filas para las
--- cinco tablas, asi que generaba seis millones de USUARIOS y seis millones de
--- inicios de sesion. Un restaurante con seis millones de empleados no existe,
--- y un dato que no puede existir tampoco sirve para medir: el planificador
--- elige segun selectividad, y una tabla de usuarios absurda distorsiona
--- cualquier JOIN contra ella.
+-- POR QUE CADA TABLA TIENE EL VOLUMEN QUE TIENE
 --
--- Las tres que si llegan a seis millones son las del movimiento diario
--- -pedidos, sus detalles y sus pagos-, que es donde el volumen tiene sentido
--- y donde se miden las consultas del punto 5.
+-- La primera version usaba :filas para las cinco tablas. El resultado medido
+-- sobre la base cargada:
+--
+--   usuarios            6.000.003 filas   1419 MB   <- la tabla MAS GRANDE
+--   usuario_roles       6.000.003 filas    427 MB
+--   historial_accesos   6.000.033 filas    757 MB
+--   ------------------------------------------------
+--   2,6 GB de los 4,6 GB de la base, en datos que no pueden existir.
+--
+-- Un restaurante tiene una decena de empleados, no seis millones. Y el dato
+-- que no puede existir tampoco sirve para medir: el planificador elige segun
+-- selectividad, asi que una tabla de usuarios absurda vuelve irreal cualquier
+-- plan que la toque -y los pedidos la tocan por usuarioId-.
+--
+-- Las tres que SI llegan a seis millones son las del movimiento diario:
+-- pedidos, sus detalles y sus pagos. Ahi el volumen es el del negocio y es
+-- donde se miden las consultas del punto 5.
+--
+-- historial_accesos baja a 5000: con diez empleados fichando todos los dias
+-- durante tres anios, cinco mil inicios de sesion es el orden correcto.
+-- Sigue siendo la tabla que mas crece en produccion, que es lo que el informe
+-- dice de ella, pero crece desde un numero que existe.
 --
 -- Genera datos sinteticos respetando las claves foraneas. Las tablas de
 -- catalogo (productos, mesas, roles, funciones) quedan como estan: poner seis
@@ -44,11 +57,11 @@
 
 \if :{?filas_usuarios}
 \else
-  \set filas_usuarios 10000
+  \set filas_usuarios 10
 \endif
 \if :{?filas_historial}
 \else
-  \set filas_historial 50000
+  \set filas_historial 5000
 \endif
 
 \echo '=============================================='
@@ -107,10 +120,16 @@ SELECT setval(pg_get_serial_sequence('usuarios', 'usuarioId'), (SELECT MAX("usua
 -- Sin esto, la pantalla de usuarios del frente los muestra con la columna de
 -- rol vacia: el rol no esta en la tabla de usuarios, esta en usuario_roles.
 --
--- El reparto imita la planta de un restaurante y no es parejo a proposito:
--- hay muchos mas mozos que gerentes. Los ids de los roles se buscan POR
--- NOMBRE y no se escriben a mano, porque los crea el seed y su numeracion
--- depende del orden en que se corrio.
+-- El reparto imita la planta de un restaurante: de cada diez empleados, uno
+-- es gerente, dos son cajeros, tres son de cocina y cuatro son mozos.
+--
+-- Se reparte por POSICION (row_number) y no por el id del usuario. Con la
+-- version anterior, que miraba "usuarioId % 20", diez empleados caian casi
+-- todos en el mismo tramo del modulo y quedaban nueve mozos y ningun cajero.
+-- Por posicion el reparto es exacto con diez usuarios y con diez mil.
+--
+-- Los ids de los roles se buscan POR NOMBRE y no se escriben a mano, porque
+-- los crea el seed y su numeracion depende del orden en que se corrio.
 -- ---------------------------------------------------------------------
 \echo '--- usuario_roles ---'
 INSERT INTO usuario_roles ("rolId", "usuarioId", "createdAt", "updatedAt")
@@ -119,20 +138,25 @@ SELECT
     u."usuarioId",
     now(),
     now()
-FROM usuarios AS u
+FROM (
+    -- Solo las cuentas generadas aca. Sin este filtro, al admin y a las del
+    -- equipo -que el seed ya dejo como Gerente- se les agregaba ADEMAS un rol
+    -- al azar, y la pantalla de usuarios mostraba "Gerente, Mozo".
+    SELECT
+        "usuarioId",
+        (row_number() OVER (ORDER BY "usuarioId") - 1) % 10 AS puesto
+    FROM usuarios
+    WHERE email LIKE '%@ejemplo.test'
+) AS u
 CROSS JOIN LATERAL (
     SELECT CASE
-        WHEN u."usuarioId" % 20 < 9  THEN 'Mozo'     -- 45%
-        WHEN u."usuarioId" % 20 < 14 THEN 'Cocina'   -- 25%
-        WHEN u."usuarioId" % 20 < 18 THEN 'Cajero'   -- 20%
-        ELSE 'Gerente'                               -- 10%
+        WHEN u.puesto = 0 THEN 'Gerente'   -- 1 de cada 10
+        WHEN u.puesto < 3 THEN 'Cajero'    -- 2 de cada 10
+        WHEN u.puesto < 6 THEN 'Cocina'    -- 3 de cada 10
+        ELSE 'Mozo'                        -- 4 de cada 10
     END AS nombre
 ) AS elegido
 JOIN roles AS r ON r.nombre = elegido.nombre
--- Solo las cuentas generadas aca. Sin este filtro, al admin y a las del equipo
--- -que el seed ya dejo como Gerente- se les agregaba ADEMAS un rol al azar, y
--- la pantalla de usuarios mostraba "Gerente, Mozo".
-WHERE u.email LIKE '%@ejemplo.test'
 ON CONFLICT ("rolId", "usuarioId") DO NOTHING;
 
 -- ---------------------------------------------------------------------
