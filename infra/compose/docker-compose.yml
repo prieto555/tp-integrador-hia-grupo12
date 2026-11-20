@@ -853,6 +853,85 @@ services:
       - pg2
       - pg3
 
+  # ---------------------------------------------------------------------
+  # Runner autoalojado de GitHub Actions (punto 8).
+  #
+  # Es la pieza que faltaba para cerrar el despliegue. El trabajo "desplegar"
+  # de entrega.yml pide runs-on: [self-hosted, restoya-produccion], y hasta
+  # ahora quedaba en "skipped" porque no habia ningun runner con esa etiqueta.
+  #
+  # POR QUE AUTOALOJADO Y NO UNO DE GITHUB. La aplicacion no corre en un
+  # servidor alquilado: corre en esta maquina, detras de CGNAT. Un runner de
+  # GitHub no tiene forma de llegar hasta aca. El autoalojado invierte la
+  # direccion: es la maquina la que va a buscar trabajo a GitHub.
+  #
+  # ---- LOS DOS PROBLEMAS QUE RESUELVE ESTA CONFIGURACION ----
+  #
+  # 1. EL SOCKET DE DOCKER. desplegar.sh corre "docker compose pull" y
+  #    "docker compose up", asi que el runner necesita hablarle al demonio de
+  #    Docker. Se le monta el socket del host.
+  #
+  #    Esto NO es gratis y corresponde decirlo: quien pueda escribir en ese
+  #    socket puede arrancar un contenedor privilegiado, o sea que tiene root
+  #    sobre la maquina. Es la razon por la que este servicio esta en su
+  #    propio perfil y no se levanta junto con el resto.
+  #
+  # 2. LAS RUTAS, QUE ES EL QUE NO SE VE VENIR. El runner corre adentro de un
+  #    contenedor, pero los "docker compose" que lanza los ejecuta el demonio
+  #    DEL HOST. Cuando el compose tiene un montaje relativo
+  #    -../postgres/pg_hba.conf, por ejemplo- el cliente lo convierte en una
+  #    ruta absoluta y se la manda al demonio... que la busca en el host.
+  #
+  #    Si el repositorio quedara descargado en /home/runner/_work, el demonio
+  #    buscaria /home/runner/_work/... en el host, no existiria, y el
+  #    despliegue fallaria con un error de montaje que no dice nada.
+  #
+  #    Por eso el directorio de trabajo se monta en la MISMA ruta con la que
+  #    el demonio lo ve. En Docker Desktop sobre Windows, el disco C: aparece
+  #    adentro de la maquina virtual como /run/desktop/mnt/host/c/...
+  #    RUTA_RUNNER_EN_EL_DEMONIO es esa ruta y hay que ajustarla si el
+  #    proyecto se clona en otro lado.
+  # ---------------------------------------------------------------------
+  runner:
+    profiles: ["despliegue"]
+    image: myoung34/github-runner:2.321.0
+    container_name: restoya_runner
+    restart: unless-stopped
+    environment:
+      # Contra que repositorio se registra. Es el repositorio cuyo main se
+      # despliega.
+      RUNNER_SCOPE: repo
+      # OJO: con valor por defecto y NO con ":?". Compose interpola el
+      # archivo ENTERO antes de mirar los perfiles, asi que una variable
+      # obligatoria aca haria fallar "docker compose --profile app config" y
+      # con el la prueba de humo del CI, que no levanta este servicio. Es la
+      # misma leccion que esta escrita en ci.yml.
+      REPO_URL: ${RUNNER_REPO_URL:-}
+      # Token de registro. VENCE A LA HORA: se saca con
+      #   gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token --jq .token
+      # Una vez registrado, el runner guarda su credencial propia y el token
+      # deja de hacer falta.
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      RUNNER_NAME: ${RUNNER_NAME:-restoya-produccion}
+      # La etiqueta que pide entrega.yml. Si no coincide, el trabajo nunca
+      # encuentra runner y queda esperando para siempre.
+      LABELS: restoya-produccion
+      RUNNER_WORKDIR: ${RUTA_RUNNER_EN_EL_DEMONIO:-/run/desktop/mnt/host/c/Users/USER/Proyectos/tp-integrador-hia-grupo13/infra/despliegue/runner-trabajo}
+      # Que no se actualice solo en medio de un despliegue.
+      DISABLE_AUTO_UPDATE: "true"
+      # Al bajar el contenedor, que se de de baja en GitHub en vez de quedar
+      # figurando como desconectado.
+      EPHEMERAL: "false"
+    volumes:
+      # Para poder lanzar docker compose. Ver el punto 1 de arriba.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # El directorio de trabajo, montado en la misma ruta que ve el demonio.
+      # Ver el punto 2 de arriba: esto es lo que hace que los montajes
+      # relativos del compose resuelvan bien durante el despliegue.
+      - ../despliegue/runner-trabajo:${RUTA_RUNNER_EN_EL_DEMONIO:-/run/desktop/mnt/host/c/Users/USER/Proyectos/tp-integrador-hia-grupo13/infra/despliegue/runner-trabajo}
+    networks:
+      - interna
+
 networks:
   interna:
     name: restoya_interna
