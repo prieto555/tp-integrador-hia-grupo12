@@ -31,12 +31,25 @@ usuarioCtrl.getUsuarios = async (req, res) => {
             });
         }
 
+        // Sin page y size, esto hacia un findAll SIN LIMITE. Con la base de
+        // prueba cargada son 6.000.003 usuarios con su rol incluido: el
+        // proceso se queda sin memoria y Docker lo reinicia, asi que la
+        // pantalla de usuarios no cargaba nunca y nginx devolvia 502.
+        //
+        // Es la misma leccion del punto 5: no hizo falta trafico ni un ataque,
+        // alcanzo UNA consulta sin LIMIT. El tope de abajo es la red de
+        // contencion; para ver mas, el frente pide ?page=&size=, que ya estaba
+        // implementado arriba.
+        const TOPE_SIN_PAGINAR = 100;
+
         const { Op } = require('sequelize');
         const usuarios = await Usuario.findAll({
-            include: [{ 
+            include: [{
                 model: Rol,
                 where: { tipo: { [Op.ne]: 'CLIENTE' } }
-            }]
+            }],
+            order: [['usuarioId', 'ASC']],
+            limit: TOPE_SIN_PAGINAR
         });
         res.json(usuarios);
     } catch (error) {

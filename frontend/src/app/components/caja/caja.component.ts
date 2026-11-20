@@ -129,10 +129,34 @@ export class CajaComponent implements OnInit {
   }
 
   descargarPDF(idCaja: number): void {
-    window.open(`${environment.apiUrl}/reportes/caja/${idCaja}/pdf`, '_blank');
+    this.descargarReporte(idCaja, 'pdf', `cierre-caja-${idCaja}.pdf`);
   }
 
   descargarExcel(idCaja: number): void {
-    window.open(`${environment.apiUrl}/reportes/caja/${idCaja}/excel`, '_blank');
+    this.descargarReporte(idCaja, 'excel', `cierre-caja-${idCaja}.xlsx`);
+  }
+
+  // Antes esto era window.open, que abre una pestana nueva y deja que el
+  // navegador haga la peticion por su cuenta. El problema es que esa peticion
+  // NO pasa por el interceptor, asi que va sin la cabecera Authorization: al
+  // proteger la ruta de reportes, la descarga devolvia 401 y se veia como una
+  // pestana en blanco, sin ningun mensaje.
+  //
+  // Pidiendolo con HttpClient el token viaja, y el archivo se baja armando un
+  // enlace temporal con el contenido ya recibido.
+  private descargarReporte(idCaja: number, formato: 'pdf' | 'excel', nombre: string): void {
+    this.cajaService.descargarReporte(idCaja, formato).subscribe({
+      next: (archivo: Blob) => {
+        const url = URL.createObjectURL(archivo);
+        const enlace = document.createElement('a');
+        enlace.href = url;
+        enlace.download = nombre;
+        enlace.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => {
+        Swal.fire('No se pudo descargar', 'El reporte no se pudo generar. Probá cerrar la caja y volver a intentar.', 'error');
+      }
+    });
   }
 }
